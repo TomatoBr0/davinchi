@@ -145,7 +145,7 @@ class ComposeTests(unittest.TestCase):
 
     def test_page_overflow_raises_instead_of_running_off_page(self):
         with self.assertRaisesRegex(ValueError, "page height"):
-            app.compose({"text": "a\n" * 80, "options": {"page_height_mm": 45}}, self.store.all())
+            app.compose({"text": "e\n" * 80, "options": {"page_height_mm": 45}}, self.store.all())
 
 
 class HTTPTests(unittest.TestCase):
