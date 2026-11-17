@@ -223,6 +223,9 @@ def compose(payload, library):
             continue
         if ch.isspace():
             x += opt["word_gap_mm"]
+            if x > opt["page_width_mm"] - opt["margin_mm"]:
+                x = opt["margin_mm"]
+                baseline += opt["line_spacing_mm"]
             index += 1
             continue
         sample = select_sample(library, text, index, rng, prev_id)
@@ -236,6 +239,8 @@ def compose(payload, library):
         rawheight = max(sy1 - sy0, 1)
         scale = opt["height_mm"] / rawheight
         width = max((sx1 - sx0) * scale, opt["height_mm"] * .08)
+        if width > opt["page_width_mm"] - 2 * opt["margin_mm"]:
+            raise ValueError("Sample too wide for page; reduce writing height")
         if x + width > opt["page_width_mm"] - opt["margin_mm"]:
             x = opt["margin_mm"]
             baseline += opt["line_spacing_mm"]
