@@ -4,6 +4,10 @@ Turn an XYZprinting Da Vinci 1.0 with a failed motherboard into a handwriting pl
 
 **Status:** working local software prototype; machine wiring and calibration **not yet verified**. The app does **not** communicate with or move the printer. Generated G-code is an offline, uncalibrated starting point, not a ready-to-run machine program.
 
+## $0-first hardware plan
+
+**Buy nothing yet.** Check whether the Da Vinci's removable A4988 drivers survived the fried motherboard, and reuse the original 12V PSU, X/Y/Z motors, and Elegoo Uno. The CNC shield and ESP32 are optional for the first USB-controlled prototype. See [the $0-first salvage checklist](docs/zero-cost-build.md) and [hardware cautions](docs/hardware.md). Driver pinouts, motor-coil pairs, current limits and protective components must be verified before applying power.
+
 ## What works
 
 - Record pen/touch/stylus movement in the browser, retaining **ordered paths**, pen lifts, timestamp and pressure (where supported).
