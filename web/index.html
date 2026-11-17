@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e1623">
+<title>DaVinci Handwriting Lab</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <p class="eyebrow">DA VINCI 1.0 • HANDWRITING PLOTTER</p>
+  <h1>Handwriting Lab</h1>
+  <p>Record actual strokes and pen lifts, build a dictionary of handwriting variations, and compose new writing with a preview. No machine connection is active.</p>
+</header>
+<main>
+  <section class="panel">
+    <div class="heading"><div><h2>1. Capture your handwriting</h2><p>Write naturally with finger, stylus or mouse. Lifting the pointer creates a new stroke.</p></div><span class="pill">Stroke training</span></div>
+    <div class="fields">
+      <label>Written text<input id="label" maxlength="80" placeholder="a, th, together, etc."></label>
+      <label>Previous characters (optional)<input id="before" maxlength="24" placeholder="e.g. e"></label>
+      <label>Following characters (optional)<input id="after" maxlength="24" placeholder="e.g. r"></label>
+    </div>
+    <div class="canvas-wrap"><canvas id="capture" width="900" height="310" aria-label="Handwriting input canvas"></canvas></div>
+    <p class="hint">The horizontal guide is just a baseline. Uploading a photo makes it a tracing reference; it cannot reveal your original stroke order automatically.</p>
+    <div class="actions">
+      <label class="file-button">Load photo reference<input type="file" id="photo" accept="image/*" hidden></label>
+      <button id="undo" class="secondary" type="button">Undo stroke</button>
+      <button id="clear" class="secondary" type="button">Clear</button>
+      <button id="save" class="primary" type="button">Save sample</button>
+    </div>
+    <p id="capture-status" role="status" class="status">No strokes recorded.</p>
+  </section>
+  <section class="panel">
+    <div class="heading"><div><h2>2. Handwriting dictionary</h2><p>Samples persist on your computer in SQLite. Each variant preserves the original point order.</p></div><button id="refresh" class="secondary" type="button">Refresh</button></div>
+    <div id="library" class="library"><p>No samples yet.</p></div>
+  </section>
+  <section class="panel">
+    <div class="heading"><div><h2>3. Compose</h2><p>Longer matching samples and context influence variation selection. Export SVG and review-only G-code.</p></div><span class="pill">Preview only</span></div>
+    <label>Text<textarea id="text" rows="4" placeholder="Write something with samples you've saved."></textarea></label>
+    <div class="fields settings">
+      <label>Random seed<input id="seed" type="number" value="1" min="0" max="2147483647"></label>
+      <label>Letter height, mm<input id="height" type="number" value="7.5" min="1" max="30" step=".5"></label>
+      <label>Letter gap, mm<input id="gap" type="number" value="1" min="0" max="12" step=".1"></label>
+      <label>Position variation, mm<input id="variation" type="number" value="0.3" min="0" max="2" step=".05"></label>
+      <label>Page width, mm<input id="width" type="number" value="200" min="40" max="300"></label>
+      <label>Page height, mm<input id="page-height" type="number" value="200" min="40" max="300"></label>
+      <label>Pen-up Z, mm<input id="z-up" type="number" value="2" step=".1"></label>
+      <label>Pen-down Z, mm<input id="z-down" type="number" value="0" step=".1"></label>
+      <label>Z pressure variation, mm<input id="zvar" type="number" value="0" min="0" max=".15" step=".01"></label>
+    </div>
+    <p class="warning">Z direction and calibration depend on the printer wiring. G-code is <strong>not machine-ready</strong>. Do not execute until limit switches, travel and tool height are verified.</p>
+    <div class="actions">
+      <button id="compose" class="primary" type="button">Compose / preview</button>
+      <button id="download-svg" class="secondary" type="button" disabled>Download SVG</button>
+      <button id="download-gcode" class="secondary" type="button" disabled>Download G-code</button>
+    </div>
+    <p id="compose-status" class="status" role="status">Train samples above, then compose.</p>
+    <div class="preview" id="preview" aria-label="SVG handwriting preview"></div>
+  </section>
+</main>
+<footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno + GRBL planned • ESP32 Wi-Fi bridge optional</footer>
+<script src="/app.js" defer></script>
+</body>
+</html>
