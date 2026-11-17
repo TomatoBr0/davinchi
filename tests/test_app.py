@@ -143,6 +143,17 @@ class ComposeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Pen-up Z"):
             app.compose({"text": "a", "options": {"pen_up_z_mm": 0, "pen_down_z_mm": 1}}, self.store.all())
 
+    def test_oversized_glyph_rejected_not_plotted_out_of_bounds(self):
+        huge = sample("x")
+        huge["strokes"] = [stroke([(0, 0, .5), (100, 1, .5)])]
+        with self.assertRaisesRegex(ValueError, "Sample too wide for page"):
+            app.compose({"text": "x"}, [{"id": 100, **huge}])
+
+    def test_many_spaces_wrap_before_next_character(self):
+        result = app.compose({"text": "e" + " " * 150 + "e"}, self.store.all())
+        self.assertEqual(len(result["selected"]), 2)
+        self.assertEqual(result["missing"], [])
+
     def test_page_overflow_raises_instead_of_running_off_page(self):
         with self.assertRaisesRegex(ValueError, "page height"):
             app.compose({"text": "e\n" * 80, "options": {"page_height_mm": 45}}, self.store.all())
