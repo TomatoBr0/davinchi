@@ -7,9 +7,12 @@ import math
 import os
 import random
 import sqlite3
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+import pencil
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -72,8 +75,16 @@ class Store:
                 strokes_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=10)
+        # sqlite3's own context manager commits but never closes; unclosed handles keep
+        # the file locked on Windows.
+        db = sqlite3.connect(self.path, timeout=10)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def add(self, payload):
         item = validate_sample(payload)
@@ -102,6 +113,8 @@ DEFAULTS = {
     "variation_mm": .3, "z_variation_mm": 0, "pen_up_z_mm": 2,
     "pen_down_z_mm": 0, "travel_feed_mm_min": 1800,
     "write_feed_mm_min": 750, "z_feed_mm_min": 100,
+    # Pencil odometer. Wear compensation is off (0) by default; measure your pencil.
+    "sharpen_interval_m": 15, "wear_z_mm_per_m": 0, "max_wear_z_mm": 1,
 }
 BOUNDS = {
     "page_width_mm": (40, 300), "page_height_mm": (40, 300),
@@ -111,6 +124,7 @@ BOUNDS = {
     "z_variation_mm": (0, .15), "pen_up_z_mm": (-10, 20),
     "pen_down_z_mm": (-10, 20), "travel_feed_mm_min": (30, 6000),
     "write_feed_mm_min": (30, 6000), "z_feed_mm_min": (10, 1000),
+    "sharpen_interval_m": (.5, 1000), "wear_z_mm_per_m": (0, .5), "max_wear_z_mm": (0, 3),
 }
 
 
@@ -124,6 +138,9 @@ def options_from(payload):
         raise ValueError("Margins exceed page width")
     if opt["pen_up_z_mm"] <= opt["pen_down_z_mm"] + opt["z_variation_mm"]:
         raise ValueError("Pen-up Z must be higher than pen-down Z plus variation")
+    if opt["pen_down_z_mm"] - opt["max_wear_z_mm"] - opt["z_variation_mm"] < -10:
+        raise ValueError("Pen-down Z minus maximum wear compensation must stay >= -10")
+    opt["sharpen_mode"] = pencil.sharpen_mode_from(payload)
     return opt
 
 
@@ -170,36 +187,69 @@ def render_svg(strokes, width, height):
             "".join(paths) + '</g></svg>')
 
 
-def render_gcode(strokes, opt):
-    """Export for offline review. Coordinates assume an unverified positive-Z pen lift."""
+def render_gcode(strokes, opt, start_mm=0.0):
+    """Export for offline review. Coordinates assume an unverified positive-Z pen lift.
+
+    start_mm is the pencil odometer (pen-down mm since last sharpen) before this job.
+    Returns (gcode, pencil_report).
+    """
     up, down = opt["pen_up_z_mm"], opt["pen_down_z_mm"]
     amp = opt["z_variation_mm"]
+    mode = opt.get("sharpen_mode", "none")
+    interval = opt.get("sharpen_interval_m", 15) * 1000
+    wear_rate = opt.get("wear_z_mm_per_m", 0) / 1000  # mm of Z per mm drawn
+    max_wear = opt.get("max_wear_z_mm", 1)
+    emit_z = amp > 0 or wear_rate > 0
     lines = [
         "; UNCALIBRATED PREVIEW - do not run without verifying homing, bounds and Z polarity",
         "; All work coordinates are page-relative; XY maps require physical setup",
         "G21", "G90", "G94",
         f"G0 Z{up:.3f}",
     ]
+    odometer, sharpens = start_mm, 0
+    if mode == "start":
+        lines += pencil.sharpen_block("start of job; natural wear afterwards")
+        odometer, sharpens = 0.0, 1
+
+    def worn_down():
+        return down - min(max_wear, wear_rate * odometer)
+
     for stroke in strokes:
+        # Only sharpen between strokes, with the pen already lifted.
+        if mode == "interval" and odometer >= interval:
+            lines += pencil.sharpen_block(f"{odometer / 1000:.2f} m drawn since last sharpen")
+            odometer, sharpens = 0.0, sharpens + 1
         x, y, _ = stroke[0]
         lines.append(f"G0 X{x:.3f} Y{y:.3f}")
-        lines.append(f"G1 Z{down:.3f} F{opt['z_feed_mm_min']:.0f}")
+        lines.append(f"G1 Z{worn_down():.3f} F{opt['z_feed_mm_min']:.0f}")
         if len(stroke) == 1:
             lines.append("G4 P0.08")
-        for i, (px, py, pressure) in enumerate(stroke[1:], 1):
+        prev = stroke[0]
+        for px, py, pressure in stroke[1:]:
+            odometer += math.hypot(px - prev[0], py - prev[1])
+            prev = (px, py)
             # Touch interfaces often report fixed pressure = 0.5. No fake sensor data.
-            z = down + amp * (.5 - pressure) * 2
+            z = worn_down() + amp * (.5 - pressure) * 2
             z = min(up - .001, max(-10, z))
-            if amp > 0:
+            if emit_z:
                 lines.append(f"G1 X{px:.3f} Y{py:.3f} Z{z:.3f} F{opt['write_feed_mm_min']:.0f}")
             else:
                 lines.append(f"G1 X{px:.3f} Y{py:.3f} F{opt['write_feed_mm_min']:.0f}")
         lines.append(f"G0 Z{up:.3f}")
     lines.append("M2")
-    return "\n".join(lines) + "\n"
+    report = {
+        "mode": mode,
+        "pen_down_mm": round(pencil.pen_down_mm(strokes), 3),
+        "start_mm": round(start_mm, 3),
+        "end_mm": round(odometer, 3),
+        "sharpens": sharpens,
+        "wear_z_mm_at_end": round(min(max_wear, wear_rate * odometer), 4),
+        "sharpen_due": odometer >= interval,
+    }
+    return "\n".join(lines) + "\n", report
 
 
-def compose(payload, library):
+def compose(payload, library, pencil_mm=0.0):
     if not isinstance(payload, dict):
         raise ValueError("Expected an object")
     text = payload.get("text")
@@ -270,15 +320,19 @@ def compose(payload, library):
         raise ValueError("No dictionary matches. Record handwriting first.")
     if sum(len(s) for s in strokes_out) > 100000:
         raise ValueError("Composed output exceeds 100000 points")
+    gcode, pencil_report = render_gcode(strokes_out, opt, pencil_mm)
     return {
         "svg": render_svg(strokes_out, opt["page_width_mm"], opt["page_height_mm"]),
-        "gcode": render_gcode(strokes_out, opt),
+        "gcode": gcode, "pencil": pencil_report,
         "selected": selected, "missing": missing, "stroke_count": len(strokes_out),
         "machine_ready": False,
     }
 
 
-def make_handler(store):
+def make_handler(store, pencil_state=None):
+    if pencil_state is None:
+        pencil_state = pencil.PencilState(store.path.parent / "pencil_state.json")
+
     class Handler(BaseHTTPRequestHandler):
         def _json(self, obj, status=200):
             encoded = json.dumps(obj).encode("utf-8")
@@ -303,6 +357,8 @@ def make_handler(store):
             url = urlparse(self.path).path
             if url == "/api/samples":
                 return self._json({"samples": store.all()})
+            if url == "/api/pencil":
+                return self._json(pencil_state.load())
             path = {"/": WEB / "index.html", "/app.js": WEB / "app.js",
                     "/style.css": WEB / "style.css"}.get(url)
             if path is None or not path.is_file():
@@ -323,7 +379,18 @@ def make_handler(store):
                 if self.path == "/api/samples":
                     return self._json({"id": store.add(data)}, 201)
                 if self.path == "/api/compose":
-                    return self._json(compose(data, store.all()))
+                    start = pencil_state.load()["mm_since_sharpen"]
+                    return self._json(compose(data, store.all(), start))
+                if self.path == "/api/pencil/plotted":
+                    # Called only after a page was physically plotted; previews never count.
+                    if not isinstance(data, dict):
+                        raise ValueError("Expected an object")
+                    return self._json(pencil_state.record_plot(
+                        num(data.get("pen_down_mm"), "pen_down_mm", 0, 1e7),
+                        num(data.get("end_mm"), "end_mm", 0, 1e7),
+                        int(num(data.get("sharpens", 0), "sharpens", 0, 10000))))
+                if self.path == "/api/pencil/sharpened":
+                    return self._json(pencil_state.mark_sharpened())
                 return self._json({"error": "Not found"}, 404)
             except (ValueError, TypeError) as exc:
                 return self._json({"error": str(exc)}, 400)
