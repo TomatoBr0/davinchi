@@ -1,0 +1,113 @@
+{
+  "units": "mm",
+  "origin": "plate lower-left corner, top view: +X right, +Y up, Z up; plate occupies z 0..T; all caps are in assembled plate coordinates",
+  "plate": {
+    "template": "DaVinci_Plate_Editable.scad",
+    "width": 220.0,
+    "depth": 285.0,
+    "thickness": 10.0,
+    "extent_xy": [
+      0,
+      0,
+      220.0,
+      285.0
+    ]
+  },
+  "paper": {
+    "size": [
+      215.9,
+      279.4
+    ],
+    "rect_xy": [
+      2.05,
+      2.8,
+      217.95,
+      282.2
+    ],
+    "margin_side": 2.05,
+    "margin_end": 2.8,
+    "centred": true
+  },
+  "cap": {
+    "wall": 3.0,
+    "clearance": 0.2,
+    "reach": 38.0,
+    "slot": 0.6,
+    "height_above_paper": 10.0,
+    "top_z": 20.0,
+    "footprint_xy_bl": [
+      -3.2,
+      -3.2,
+      38.0,
+      38.0
+    ],
+    "footprint_size": 41.2,
+    "inlay_depth": 0.6,
+    "cell": 4.0,
+    "print_orientation": "top face down"
+  },
+  "footprint_assembled": [
+    226.4,
+    291.4
+  ],
+  "dictionary": "DICT_4X4_50",
+  "marker_black_size": 24.0,
+  "markers": {
+    "0": {
+      "corner": "bottom-left",
+      "center": [
+        17.4,
+        17.4
+      ],
+      "top_z": 20.0,
+      "cap_xy": [
+        -3.2,
+        -3.2,
+        38.0,
+        38.0
+      ]
+    },
+    "1": {
+      "corner": "bottom-right",
+      "center": [
+        202.6,
+        17.4
+      ],
+      "top_z": 20.0,
+      "cap_xy": [
+        182.0,
+        -3.2,
+        223.2,
+        38.0
+      ]
+    },
+    "2": {
+      "corner": "top-right",
+      "center": [
+        202.6,
+        267.6
+      ],
+      "top_z": 20.0,
+      "cap_xy": [
+        182.0,
+        247.0,
+        223.2,
+        288.2
+      ]
+    },
+    "3": {
+      "corner": "top-left",
+      "center": [
+        17.4,
+        267.6
+      ],
+      "top_z": 20.0,
+      "cap_xy": [
+        -3.2,
+        247.0,
+        38.0,
+        288.2
+      ]
+    }
+  }
+}
