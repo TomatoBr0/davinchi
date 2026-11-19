@@ -1,0 +1,38 @@
+DA VINCI PAPER BED - BLANK PLATE
+
+Dimensions: 220 x 285 x 10 mm. All model coordinates are millimeters.
+US Letter: 215.9 x 279.4 mm, leaving 2.05 mm per side and 2.8 mm per end when centered.
+
+FILES
+DaVinci_Plate_220x285x10mm_Blank.stl: closed solid, no holes or recesses.
+DaVinci_Plate_Editable.scad: editable OpenSCAD model; same blank initially.
+Plate_Fit_Check_1to1.svg: physical outline with paper footprint and a 100 mm scale bar.
+
+MOUNTING
+Mount positions are deliberately omitted so you can position the plate and transfer marks directly.
+The editable model supports cylindrical screw-head counterbores from the TOP and through-holes.
+Head recess depth defaults to 5 mm, leaving 5 mm of material beneath the recess.
+Provisional head recess diameter: 5.5 mm, based on an approximate 5 mm head width.
+Measure actual screw head diameter/height and shaft diameter before making holes.
+Do not use a 5 mm diameter recess for a head that actually measures 5 mm: it needs clearance.
+No hole positions were inferred from the angled ruler photographs.
+To add digital holes, set shaft_clearance_diameter and add mounts as [x,y] coordinates.
+Origin is the lower-left corner when viewed from above. +Z is toward the paper surface.
+Ensure all screw heads finish at or below the paper surface. Existing hardware may need changing.
+
+FIT CHECK
+First cut a 220 x 285 mm cardboard outline. Account separately for the full 10 mm thickness.
+Check clearance to frame, rods, cables, and carriage throughout intended bed travel.
+Physical clearance and mounting fit are NOT verified by these photos or this model.
+The 3.5 mm raised mounting feature remains an approximate, unresolved hardware detail;
+no underside pockets or mating features are modeled.
+A bigger plate supports paper but does not increase XY pen travel.
+Check slicer build volume: this is a one-piece 220 x 285 mm footprint.
+STL has no unit metadata: import as millimeters and verify dimensions in the slicer.
+Material choice, print orientation/infill and rigidity have not been physically validated.
+Keep bed and extruder heaters disconnected for the plotter conversion.
+
+VALIDATION
+Binary STL: 12 triangles, consistent outward winding, each edge shared by two triangles.
+Bounds: X 0..220; Y 0..285; Z 0..10 mm.
+Solid geometric volume: 627000 mm^3 (627 cm^3); actual print consumption depends on slicer settings.
