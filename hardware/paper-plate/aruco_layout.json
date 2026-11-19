@@ -1,0 +1,50 @@
+{
+  "units": "mm",
+  "origin": "paper bottom-left corner, +X right, +Y up (top view)",
+  "paper": [
+    215.9,
+    279.4
+  ],
+  "dictionary": "DICT_4X4_50",
+  "marker_black_size": 24.0,
+  "marker_surface_z": 4.0,
+  "markers": {
+    "0": {
+      "center": [
+        -29.5,
+        15.5
+      ]
+    },
+    "1": {
+      "center": [
+        245.4,
+        15.5
+      ]
+    },
+    "2": {
+      "center": [
+        245.4,
+        263.9
+      ]
+    },
+    "3": {
+      "center": [
+        -29.5,
+        263.9
+      ]
+    }
+  },
+  "plate_extent": [
+    -48.5,
+    -13.5,
+    264.4,
+    292.9
+  ],
+  "plate_thickness": 4.0,
+  "wall": {
+    "thickness": 10.0,
+    "leg": 35.0,
+    "height": 3.0,
+    "clearance": 0.5
+  }
+}
