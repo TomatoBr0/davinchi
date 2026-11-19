@@ -7,6 +7,7 @@ intervals to the other three corners, and writes into this folder:
   corner_cap_id{0..3}.stl          single-colour tab, assembled plate coordinates
   aruco_markers_print.svg          four 24 mm ArUco stickers on US Letter (print at 100%)
   layout.json                      parameters, geometry, paper rect, marker centres
+  ../DaVinci_Plate_220x285x10mm_SpringPockets.stl   plate with 4 underside spring pockets
   preview_top.png, preview_iso.png, preview_cap_section.png
 
 Coordinates: plate lower-left corner = origin, +X right, +Y up (top view), Z up.
@@ -31,18 +32,19 @@ TEMPLATE = HERE.parent / "DaVinci_Plate_Editable.scad"
 PAPER_W, PAPER_H = 215.9, 279.4        # US Letter
 S = 26.0                               # tab square side, centred on the plate corner
 HALF = S / 2                           # 13.0: tab reach over the plate from each edge
-TOP_T = 2.4                            # thin top
+TOP_T = 2.4                            # thin top; its underside rests on the paper
 WALL = 3.0                             # wrapper wall outside the plate edge
 CLEAR = 0.2                            # fit clearance, wall to plate edge
-LIP_IN = 2.0                           # lip reaches this far under the plate from its edge
-LIP_T = 1.6                            # lip thickness
-LIP_ZCLR = 0.2                         # gap between plate bottom (z=0) and lip top
+CLEAR_IN = 1.0                         # pocket centre = (CLEAR_IN + HALF) / 2: under the plate
+FLANGE_T = 2.4                         # bottom flange under the plate (must be > INDENT + 1.0)
 SPRING_OD = 4.5                        # click-pen spring defaults: MEASURE YOUR SPRING
 SPRING_FREE = 12.0
 PRELOAD = 3.0
-POCKET = SPRING_OD + 0.5               # square spring indent side
-INDENT = 1.2                           # indent depth into the underside of the top
-GAP = SPRING_FREE - INDENT - PRELOAD   # 7.8: clear height, paper/plate top -> top underside
+SPRING_SOLID = 4.0                     # GUESS: solid height of the spring; measure it
+POCKET = SPRING_OD + 0.5               # square spring pocket side (flange and plate)
+INDENT = 1.2                           # pocket depth into the top face of the flange
+PLATE_INDENT = 1.0                     # pocket depth up into the plate underside
+GAP_B = SPRING_FREE - INDENT - PLATE_INDENT - PRELOAD   # 6.8: flange top -> plate bottom
 STICKER = 24.0                         # printed marker incl. quiet zone
 CELL = 3.0                             # 6 cells = 18 mm black square
 QUIET = 1                              # quiet-zone cells on each side (3 mm)
@@ -75,12 +77,16 @@ END_M = (D - PAPER_H) / 2                  # 2.80 paper margin along Y
 assert SIDE_M > 0 and END_M > 0, "US Letter does not fit on the plate"
 PAPER = (SIDE_M, END_M, SIDE_M + PAPER_W, END_M + PAPER_H)
 PLATE_BOX = (0.0, 0.0, W, D, 0.0, T)
-Z_TOP_BOT = T + GAP                        # underside of the thin top (17.8)
-CAP_TOP = Z_TOP_BOT + TOP_T                # top face of the tab (20.2)
+Z_TOP_BOT = T                              # underside of the top rests on the paper (z = 10)
+CAP_TOP = T + TOP_T                        # top face of the tab (12.4), 2.4 above the paper
+Z_FL_TOP = -GAP_B                          # flange top (-6.8)
+Z_FL_BOT = -(GAP_B + FLANGE_T)             # flange bottom (-9.2)
 WALL_O = -(CLEAR + WALL)                   # outer face of the bottom-left walls (-3.2)
-LIP_Z0, LIP_Z1 = -LIP_ZCLR - LIP_T, -LIP_ZCLR
-POCKET_CX = (SIDE_M + HALF) / 2            # centre of the paper-overlap region
-POCKET_CY = (END_M + HALF) / 2
+POCKET_CX = (CLEAR_IN + HALF) / 2          # pocket centre, under the plate (7.0)
+POCKET_CY = POCKET_CX
+PLATE_POCKET_Z0 = -1.0                     # plate pocket is cut up from below the plate
+USABLE_LIFT = (SPRING_FREE - PRELOAD) - SPRING_SOLID    # 5.0 mm
+SPRING_LEN = INDENT + GAP_B + PLATE_INDENT              # 9.0 mm installed
 
 
 # ---- exact grid mesher + ArUco cells ------------------------------------------
@@ -212,18 +218,23 @@ def sticker_cells_plate(k):
 
 
 def cap_boxes_bl():
-    """Bottom-left tab in plate coordinates: (solid boxes by name, spring pocket box)."""
+    """Bottom-left tab in plate coordinates: (solid boxes by name, flange spring pocket box)."""
     solid = {
         "top": (-HALF, -HALF, HALF, HALF, Z_TOP_BOT, CAP_TOP),
-        "wall_left": (WALL_O, WALL_O, -CLEAR, HALF, LIP_Z0, Z_TOP_BOT),
-        "wall_bottom": (WALL_O, WALL_O, HALF, -CLEAR, LIP_Z0, Z_TOP_BOT),
-        "lip_left": (WALL_O, WALL_O, LIP_IN, HALF, LIP_Z0, LIP_Z1),
-        "lip_bottom": (WALL_O, WALL_O, HALF, LIP_IN, LIP_Z0, LIP_Z1),
+        "flange": (WALL_O, WALL_O, HALF, HALF, Z_FL_BOT, Z_FL_TOP),
+        "wall_left": (WALL_O, WALL_O, -CLEAR, HALF, Z_FL_BOT, CAP_TOP),
+        "wall_bottom": (WALL_O, WALL_O, HALF, -CLEAR, Z_FL_BOT, CAP_TOP),
     }
     h = POCKET / 2
     pocket = (POCKET_CX - h, POCKET_CY - h, POCKET_CX + h, POCKET_CY + h,
-              Z_TOP_BOT - 1.0, Z_TOP_BOT + INDENT)
+              Z_FL_TOP - INDENT, Z_FL_TOP)
     return solid, pocket
+
+
+def plate_pocket_bl():
+    """Bottom-left plate underside pocket: same XY as the flange pocket, z -1..PLATE_INDENT."""
+    _, (x0, y0, x1, y1, _, _) = cap_boxes_bl()
+    return (x0, y0, x1, y1, PLATE_POCKET_Z0, PLATE_INDENT)
 
 
 def check_design():
@@ -232,14 +243,25 @@ def check_design():
     for name, b in solid.items():
         assert not overlaps(b, PLATE_BOX), f"{name} intersects the plate"
     px0, py0, px1, py1, pz0, pz1 = pocket
-    assert px0 >= SIDE_M - 1e-9 and py0 >= END_M - 1e-9, "pocket not over the paper"
-    assert px1 < HALF and py1 < HALF, "pocket leaves the plate quarter of the tab"
+    assert px0 >= SIDE_M - 1e-9 and py0 >= END_M - 1e-9, "pocket not under the paper"
+    assert px0 >= 0.5 - 1e-9 and py0 >= 0.5 - 1e-9, "pocket closer than 0.5 mm to the tab edge"
+    assert px1 <= HALF - 0.5 + 1e-9 and py1 <= HALF - 0.5 + 1e-9, "pocket not within [0.5, h-0.5]"
     assert POCKET >= SPRING_OD, "pocket smaller than the spring"
-    assert pz0 < Z_TOP_BOT < pz1 < CAP_TOP, "pocket z range"
-    assert abs((Z_TOP_BOT + INDENT - T) - (SPRING_FREE - PRELOAD)) < 1e-9, \
+    assert pz0 == Z_FL_TOP - INDENT and pz1 == Z_FL_TOP, "flange pocket z range"
+    assert FLANGE_T > INDENT + 1.0, "flange too thin for the pocket"
+    assert Z_TOP_BOT == T, "top underside must rest on the paper at z = T"
+    assert abs(CAP_TOP - (T + TOP_T)) < 1e-9
+    assert Z_FL_TOP == -GAP_B and Z_FL_BOT == -(GAP_B + FLANGE_T)
+    assert abs(GAP_B - (SPRING_FREE - INDENT - PLATE_INDENT - PRELOAD)) < 1e-9
+    assert abs(SPRING_LEN - (SPRING_FREE - PRELOAD)) < 1e-9, \
         "installed spring length != SPRING_FREE - PRELOAD"
-    assert abs(CAP_TOP - (T + GAP + TOP_T)) < 1e-9
-    assert abs(GAP - (SPRING_FREE - INDENT - PRELOAD)) < 1e-9
+    assert abs((PLATE_INDENT - pz0) - SPRING_LEN) < 1e-9, \
+        "spring span (flange pocket floor -> plate pocket ceiling) != installed length"
+    assert USABLE_LIFT >= 1.0, "usable lift below 1 mm: no room to insert paper"
+    qx0, qy0, qx1, qy1, qz0, qz1 = plate_pocket_bl()
+    assert 0 <= qx0 and qx1 <= W and 0 <= qy0 and qy1 <= D, "plate pocket leaves the plate"
+    assert PLATE_INDENT < T - 5, "plate pocket leaves less than 5 mm of material"
+    assert abs(qz1 - PLATE_INDENT) < 1e-9
     assert abs(2 * HALF - S) < 1e-12
     assert STICKER == (6 + 2 * QUIET) * CELL and BLACK == 6 * CELL
     assert STICKER <= S, "sticker does not fit on the tab top"
@@ -250,8 +272,10 @@ def check_corner(k, solid, pocket):
         assert not overlaps(b, PLATE_BOX), f"id {k}: tab part intersects the plate"
     mx, my = CORNER_FLIP[k]
     px0, py0, px1, py1 = mirror_box(pocket, mx, my)[:4]   # back in bottom-left frame
-    assert px0 >= SIDE_M - 1e-9 and py0 >= END_M - 1e-9, f"id {k}: pocket not over paper"
-    assert px1 < HALF and py1 < HALF, f"id {k}: pocket outside plate quarter"
+    assert px0 >= SIDE_M - 1e-9 and py0 >= END_M - 1e-9, f"id {k}: pocket not under paper"
+    assert px0 >= 0.5 - 1e-9 and py0 >= 0.5 - 1e-9, f"id {k}: pocket too close to tab edge"
+    assert px1 <= HALF - 0.5 + 1e-9 and py1 <= HALF - 0.5 + 1e-9, \
+        f"id {k}: pocket outside [0.5, h-0.5]"
     cx, cy = marker_center(k)
     assert (cx, cy) in {(0.0, 0.0), (W, 0.0), (W, D), (0.0, D)}
 
@@ -262,7 +286,9 @@ def build_cap(k):
     solid = [mirror_box(b, mx, my) for b in solid_bl.values()]
     pocket = mirror_box(pocket_bl, mx, my)
     check_corner(k, solid, pocket)
-    return {"solid": solid, "pocket": pocket, "mesh": mesh(solid, [pocket])}
+    plate_pocket = mirror_box(plate_pocket_bl(), mx, my)
+    return {"solid": solid, "pocket": pocket, "plate_pocket": plate_pocket,
+            "mesh": mesh(solid, [pocket])}
 
 
 # ---- analytic volume (inclusion-exclusion over boxes) -------------------------
@@ -322,37 +348,50 @@ def write_layout(caps):
         "units": "mm",
         "origin": ("plate lower-left corner, top view: +X right, +Y up, Z up; plate occupies "
                    "x 0..W, y 0..D, z 0..T; all tabs are in assembled plate coordinates"),
-        "plate": {"template": TEMPLATE.name, "width": W, "depth": D, "thickness": T},
+        "plate": {"template": TEMPLATE.name, "width": W, "depth": D, "thickness": T,
+                  "spring_pockets_stl": PLATE_STL_NAME},
         "paper": {"size": [PAPER_W, PAPER_H], "rect_xy": [round(v, 4) for v in PAPER],
                   "margin_side": round(SIDE_M, 4), "margin_end": round(END_M, 4),
                   "centred": True, "thickness_drawn_in_preview": 0.1},
         "tab": {"side": S, "half": HALF, "centred_on": "plate corner",
                 "top_t": TOP_T, "top_z_bottom": round(Z_TOP_BOT, 4), "top_z": round(CAP_TOP, 4),
                 "top_above_plate_top": round(CAP_TOP - T, 4),
+                "top_above_paper": round(CAP_TOP - T, 4),
                 "footprint_bl_xy": [-HALF, -HALF, HALF, HALF],
                 "paper_covered_bl_xy": [round(SIDE_M, 4), round(END_M, 4), HALF, HALF],
                 "print_orientation": "top face down on the bed"},
         "walls": {"wall": WALL, "clear": CLEAR, "outer_face_bl": WALL_O,
-                  "z_range": [round(LIP_Z0, 4), round(Z_TOP_BOT, 4)]},
-        "lips": {"inset_under_plate": LIP_IN, "thickness": LIP_T, "zclear": LIP_ZCLR,
-                 "z_range": [round(LIP_Z0, 4), round(LIP_Z1, 4)],
-                 "below_plate_bottom": round(LIP_ZCLR + LIP_T, 4)},
+                  "z_range": [round(Z_FL_BOT, 4), round(CAP_TOP, 4)]},
+        "flange": {"thickness": FLANGE_T, "z_range": [round(Z_FL_BOT, 4), round(Z_FL_TOP, 4)],
+                   "xy_bl": [WALL_O, WALL_O, HALF, HALF],
+                   "bottom_below_plate_bottom": round(GAP_B + FLANGE_T, 4)},
         "spring": {"od": SPRING_OD, "free": SPRING_FREE, "preload": PRELOAD,
-                   "installed": SPRING_FREE - PRELOAD, "pocket_side": POCKET,
-                   "pocket_bl_xy": [round(v, 4) for v in cap_boxes_bl()[1][:4]],
-                   "pocket_z": [round(Z_TOP_BOT - 1.0, 4), round(Z_TOP_BOT + INDENT, 4)],
-                   "indent": INDENT},
-        "gap": round(GAP, 4),
-        "gap_definition": "SPRING_FREE - INDENT - PRELOAD; clear height from plate top to top underside",
+                   "installed": SPRING_LEN, "solid_height_guess": SPRING_SOLID,
+                   "pocket_side": POCKET,
+                   "pocket_centre_bl_xy": [round(POCKET_CX, 4), round(POCKET_CY, 4)],
+                   "flange_pocket_bl_xy": [round(v, 4) for v in cap_boxes_bl()[1][:4]],
+                   "flange_pocket_z": [round(Z_FL_TOP - INDENT, 4), round(Z_FL_TOP, 4)],
+                   "flange_indent": INDENT,
+                   "plate_pocket_bl_xy": [round(v, 4) for v in plate_pocket_bl()[:4]],
+                   "plate_pocket_z": [PLATE_POCKET_Z0, PLATE_INDENT],
+                   "plate_indent": PLATE_INDENT,
+                   "span_flange_floor_to_plate_ceiling": round(PLATE_INDENT - (Z_FL_TOP - INDENT), 4)},
+        "gap_b": round(GAP_B, 4),
+        "gap_b_definition": "SPRING_FREE - INDENT - PLATE_INDENT - PRELOAD; flange top (z -GAP_B) to plate bottom (z 0)",
+        "lift": {"max_lift_gap_closes": round(GAP_B, 4),
+                 "usable_lift": round(USABLE_LIFT, 4),
+                 "usable_definition": "(SPRING_FREE - PRELOAD) - SPRING_SOLID; SPRING_SOLID is a guess, measure it",
+                 "note": "max lift is GAP_B; the real limit is the spring's solid height"},
         "sticker": {"size": STICKER, "cell": CELL, "quiet_cells": QUIET,
                     "black_size": BLACK, "printed": True, "print_scale": "100%"},
         "dictionary": DICTIONARY,
         "markers": {},
         "footprint_assembled": {
             "tabs_overall_xy": [round(W + S, 4), round(D + S, 4)],
-            "walls_and_lips_overall_xy": [round(W + 2 * (WALL + CLEAR), 4),
-                                          round(D + 2 * (WALL + CLEAR), 4)],
+            "walls_and_flange_overall_xy": [round(W + 2 * (WALL + CLEAR), 4),
+                                            round(D + 2 * (WALL + CLEAR), 4)],
         },
+        "plate_pockets": {},
     }
     for k in range(4):
         cx, cy = marker_center(k)
@@ -364,10 +403,40 @@ def write_layout(caps):
             "top_z": round(CAP_TOP, 4),
             "tab_xy": [round(v, 4) for v in mirror_box(cap_boxes_bl()[0]["top"], *CORNER_FLIP[k])[:4]],
         }
+        pb = mirror_box(plate_pocket_bl(), *CORNER_FLIP[k])
+        layout["plate_pockets"][str(k)] = {
+            "corner": CORNER_NAMES[k],
+            "xy": [round(v, 4) for v in pb[:4]],
+            "centre": [round((pb[0] + pb[2]) / 2, 4), round((pb[1] + pb[3]) / 2, 4)],
+            "z": [PLATE_POCKET_Z0, PLATE_INDENT],
+            "side": POCKET,
+        }
     (HERE / "layout.json").write_text(json.dumps(layout, indent=2), encoding="utf-8")
 
 
 # ---- output: printable stickers (SVG, mm units, y down) ------------------------
+PLATE_STL_NAME = "DaVinci_Plate_220x285x10mm_SpringPockets.stl"
+
+
+def plate_pockets_all():
+    return [mirror_box(plate_pocket_bl(), *CORNER_FLIP[k]) for k in range(4)]
+
+
+def write_plate_stl():
+    """Template plate minus the four underside spring pockets, same mesher, next to the blank."""
+    tris = mesh([PLATE_BOX], plate_pockets_all())
+    path = HERE.parent / PLATE_STL_NAME
+    write_stl(path, tris)
+    bo, bm, vol = check(tris)
+    expected = (W * D * T - 4 * POCKET ** 2 * PLATE_INDENT) / 1000
+    assert bo == 0 and bm == 0 and vol > 0, f"{PLATE_STL_NAME}: open={bo} nonmanifold={bm} vol={vol}"
+    assert abs(vol - expected) < 1e-6, f"{PLATE_STL_NAME}: volume {vol} != expected {expected}"
+    print(f"{PLATE_STL_NAME}: {len(tris)} tris, open={bo} nonmanifold={bm} "
+          f"volume_cm3={vol:.4f} (expected {expected:.4f} = {W * D * T / 1000:g} "
+          f"- 4 x {POCKET ** 2 * PLATE_INDENT / 1000:g})")
+    return vol
+
+
 def write_svg(path):
     PW, PH = PAPER_W, PAPER_H
     gap = 40.0
@@ -478,9 +547,8 @@ def write_preview_top(path):
                            f"({HALF:g} mm over the plate each way). Stickers {STICKER:g} mm, "
                            f"black square {BLACK:g} mm.",
            fill=(0, 0, 0), font=f_small)
-    d.text((10, base + 28), f"Dashed orange = spring pocket {POCKET:g} mm square, centre "
-                            f"({POCKET_CX:.2f}, {POCKET_CY:.2f}) on the paper corner. "
-                            f"Cap top z = {CAP_TOP:g}.",
+    d.text((10, base + 28), f"Dashed orange = spring under plate ({POCKET:g} mm pocket, centre "
+                            f"{POCKET_CX:.1f}, {POCKET_CY:.1f}). Tab top z = {CAP_TOP:g}.",
            fill=(0, 0, 0), font=f_small)
     d.text((10, base + 50), f"Assembled tab extent {W + S:g} x {D + S:g} mm. Markers: {DICTIONARY}, "
                             f"ids 0 BL, 1 BR, 2 TR, 3 TL.",
@@ -584,13 +652,17 @@ def write_preview_iso_all(path, caps, plate_tris, paper_tris):
 def write_cap_section(path):
     from PIL import Image, ImageDraw
     S_PX = 8.0
-    xmin, xmax, zmin, zmax = -34.0, 40.0, -7.0, 25.0
-    left, top = 40, 70
-    pw, ph = (xmax - xmin) * S_PX, (zmax - zmin) * S_PX
-    img = Image.new("RGB", (int(left + pw + 380), int(top + ph + 70)), (255, 255, 255))
+    xmin, xmax, zmin, zmax = -30.0, 40.0, -15.0, 18.0
+    COL = 42.0                                     # label column (mm); labels sit here
+    left, top = 40, 64
+    pw, ph = (COL - xmin) * S_PX, (zmax - zmin) * S_PX
+    img = Image.new("RGB", (int(left + pw + 600), int(top + ph + 80)), (255, 255, 255))
     d = ImageDraw.Draw(img)
     f, fs = load_font(16), load_font(14)
     INK = (30, 30, 30)
+    BODY, EDGE, SPR = (92, 120, 148), (50, 70, 90), (170, 40, 40)
+    p0x, p1x = POCKET_CX - POCKET / 2, POCKET_CX + POCKET / 2   # flange and plate pocket, same XY
+    sx = POCKET_CX
 
     def P(x, z):
         return (left + (x - xmin) * S_PX, top + (zmax - z) * S_PX)
@@ -601,6 +673,9 @@ def write_cap_section(path):
 
     def text(x, z, s, anchor="lm", font=fs):
         d.text(P(x, z), s, fill=(20, 20, 20), font=font, anchor=anchor)
+
+    def leader(x, z):
+        d.line([P(x, z), P(COL - 0.5, z)], fill=(110, 110, 110), width=1)
 
     def dim_v(x, z0, z1):
         a, b = P(x, z0), P(x, z1)
@@ -614,53 +689,68 @@ def write_cap_section(path):
         for p in (a, b):
             d.line([p[0], p[1] - 4, p[0], p[1] + 4], fill=INK)
 
-    solid_bl, pocket = cap_boxes_bl()
-    p0x, p1x = pocket[0], pocket[2]
-    d.text((10, 10), f"Cross-section, tab id 0 at y = {POCKET_CY:.2f} (pocket centre), "
-                     f"looking +Y, z up, 8 px/mm", fill=(0, 0, 0), font=f)
+    d.text((10, 10), f"Cross-section, tab id 0 (bottom-left) at y = {POCKET_CY:.2f} "
+                     f"(spring pocket centre), looking +Y, z up, 8 px/mm", fill=(0, 0, 0), font=f)
 
-    rect(0, 0, xmax, T, fill=(205, 205, 205), outline=(120, 120, 120))            # plate
+    # Plate with its underside pocket: notch from z 0 up to PLATE_INDENT (cut plane y = pocket centre)
+    plate = [(0, 0), (p0x, 0), (p0x, PLATE_INDENT), (p1x, PLATE_INDENT), (p1x, 0),
+             (xmax, 0), (xmax, T), (0, T)]
+    d.polygon([P(x, z) for x, z in plate], fill=(205, 205, 205), outline=(120, 120, 120))
     text(20, 5.0, "plate, z 0..10", anchor="mm")
     rect(SIDE_M, T, xmax, T + 0.1, fill=(255, 255, 255), outline=(60, 60, 60))    # paper
-    text(-6, 9.0, "paper / plate top z = 10", anchor="rm")
-    # Lip under the plate, wall beside the plate edge (both on the cut plane y = pocket centre)
-    rect(WALL_O, LIP_Z0, LIP_IN, LIP_Z1, fill=(92, 120, 148), outline=(50, 70, 90))
-    rect(WALL_O, LIP_Z0, -CLEAR, Z_TOP_BOT, fill=(92, 120, 148), outline=(50, 70, 90))
-    # Thin top with the spring indent cut into its underside
-    top_poly = [P(-HALF, Z_TOP_BOT), P(p0x, Z_TOP_BOT), P(p0x, Z_TOP_BOT + INDENT),
-                P(p1x, Z_TOP_BOT + INDENT), P(p1x, Z_TOP_BOT), P(HALF, Z_TOP_BOT),
-                P(HALF, CAP_TOP), P(-HALF, CAP_TOP)]
-    d.polygon(top_poly, fill=(92, 120, 148), outline=(50, 70, 90))
-    # Spring: zigzag from the plate top to the indent ceiling (installed length 9)
-    sx = POCKET_CX
-    zs = np.linspace(T, Z_TOP_BOT + INDENT, 11)
-    pts = [P(sx + (SPRING_OD / 2 - 0.25) * (1 if i % 2 else -1) * (0 if i in (0, 10) else 1), z)
-           for i, z in enumerate(zs)]
-    d.line(pts, fill=(170, 40, 40), width=2, joint="curve")
+    text(-HALF - 0.6, T - 0.4, f"paper top z {T:g}", anchor="rm")
 
-    # Labels and dimensions (kept apart so none overlap)
-    dim_v(HALF + 1.5, CAP_TOP - TOP_T, CAP_TOP)
-    text(HALF + 2.5, CAP_TOP - TOP_T / 2, f"TOP_T {TOP_T:g}")
-    text(p1x + 0.6, CAP_TOP + 1.4, f"INDENT {INDENT:g} (pocket {POCKET:g} mm square)")
-    dim_v(p1x + 0.6, Z_TOP_BOT, Z_TOP_BOT + INDENT)
-    dim_v(-8.0, T, Z_TOP_BOT)
-    text(-8.8, (T + Z_TOP_BOT) / 2 + 0.7, f"GAP {GAP:g}", anchor="rm")
-    text(-8.8, (T + Z_TOP_BOT) / 2 - 0.9, "(clear height)", anchor="rm")
-    text(p1x + 0.6, 15.0, f"spring OD {SPRING_OD:g}")
-    text(p1x + 0.6, 13.6, f"spring free {SPRING_FREE:g} -> installed {SPRING_FREE - PRELOAD:g}")
-    text(p1x + 0.6, 12.2, f"({PRELOAD:g} mm preload)")
-    dim_h(LIP_Z0 - 1.2, WALL_O, -CLEAR)
-    text((WALL_O - CLEAR) / 2, LIP_Z0 - 2.0, f"WALL {WALL:g}", anchor="mt")
-    text(0.6, -5.8, f"CLEAR {CLEAR:g}", anchor="lm")
-    text(LIP_IN + 1.2, (LIP_Z0 + LIP_Z1) / 2,
-         f"LIP {LIP_T:g} thick, {LIP_IN:g} under plate, {LIP_ZCLR:g} gap to plate bottom")
-    dim_v(WALL_O - 1.2, LIP_Z0, LIP_Z1)
-    text(WALL_O - 1.8, (LIP_Z0 + LIP_Z1) / 2, "LIP", anchor="rm")
-    text(-HALF - 0.6, CAP_TOP - 0.6, f"cap top z {CAP_TOP:g}", anchor="rm")
-    text(-HALF - 0.6, CAP_TOP - 2.0, f"{CAP_TOP - T:g} above plate top", anchor="rm")
+    # Tab body: top resting on the paper, wall beside the plate edge, flange under the plate
+    # with the spring pocket cut into its top face (one outline, traced clockwise)
+    body = [(-HALF, CAP_TOP), (HALF, CAP_TOP), (HALF, T), (-CLEAR, T),
+            (-CLEAR, Z_FL_TOP), (p0x, Z_FL_TOP), (p0x, Z_FL_TOP - INDENT),
+            (p1x, Z_FL_TOP - INDENT), (p1x, Z_FL_TOP), (HALF, Z_FL_TOP),
+            (HALF, Z_FL_BOT), (WALL_O, Z_FL_BOT), (WALL_O, T), (-HALF, T)]
+    d.polygon([P(x, z) for x, z in body], fill=BODY, outline=EDGE)
+
+    # Spring: zigzag from the flange pocket floor up to the plate pocket ceiling (9 mm installed)
+    zs = np.linspace(Z_FL_TOP - INDENT, PLATE_INDENT, 15)
+    pts = []
+    for i, z in enumerate(zs):
+        off = 0.0 if i in (0, len(zs) - 1) else (SPRING_OD / 2 - 0.25) * (1 if i % 2 else -1)
+        pts.append(P(sx + off, z))
+    d.line(pts, fill=SPR, width=2, joint="curve")
+
+    # Force arrow: spring pushes the flange, and so the tab, down onto the paper
+    d.line([P(sx, Z_FL_BOT - 0.4), P(sx, -11.2)], fill=SPR, width=3)
+    d.polygon([P(sx, -11.8), P(sx - 0.6, -10.8), P(sx + 0.6, -10.8)], fill=SPR)
+    text(sx + 1.2, -11.2, "spring pulls tab down onto paper")
+
+    # Dimensions on the left, labels in the right column (leader lines where they point at a feature)
+    dim_v(HALF + 1.2, T, CAP_TOP)
+    leader(HALF + 1.2, CAP_TOP - TOP_T / 2)
+    text(COL, CAP_TOP - TOP_T / 2, f"TOP_T {TOP_T:g}: top rests on the paper (z {T:g})")
+    dim_v(-5.0, Z_FL_BOT, Z_FL_TOP)
+    text(-5.6, Z_FL_BOT - 0.6, f"FLANGE_T {FLANGE_T:g}", anchor="rm")
+    dim_v(-8.0, Z_FL_TOP, 0.0)
+    text(-8.6, -2.6, f"GAP_B {GAP_B:g}", anchor="rm")
+    text(-8.6, -5.0, "spring working gap", anchor="rm")
+    dim_h(Z_FL_BOT - 1.4, WALL_O, -CLEAR)
+    text((WALL_O - CLEAR) / 2, Z_FL_BOT - 2.0, f"WALL {WALL:g}", anchor="mt")
+    d.line([P(-CLEAR / 2, CAP_TOP), P(-CLEAR / 2, 15.0)], fill=INK)
+    text(-CLEAR / 2, 15.4, f"CLEAR {CLEAR:g} (wall to plate edge)", anchor="mb")
+    text(-HALF - 0.6, CAP_TOP + 1.2, f"tab top z {CAP_TOP:g}", anchor="rm")
+
+    leader(p1x, 0.5)
+    text(COL, 0.5, f"PLATE_INDENT {PLATE_INDENT:g}: spring seat in plate underside")
+    text(COL, 6.0, "lift handle: spring compresses, top rises off paper")
+    text(COL, 3.6, f"(~{USABLE_LIFT:g} mm usable lift, solid height {SPRING_SOLID:g} guessed)")
+    leader(sx + SPRING_OD / 2 + 0.5, -1.6)
+    text(COL, -1.6, f"spring free {SPRING_FREE:g} -> installed {SPRING_LEN:g} "
+                    f"({PRELOAD:g} mm preload)")
+    text(COL, -3.6, f"spring OD {SPRING_OD:g} (measure yours), pocket {POCKET:g} mm square")
+    leader(p1x, Z_FL_TOP - INDENT / 2)
+    text(COL, Z_FL_TOP - INDENT / 2, f"INDENT {INDENT:g}: spring seat in flange top (under plate)")
+
     d.text((10, top + ph + 30),
-           "z = 0 is the plate bottom. Paper drawn 0.1 mm thick. Spring drawn from the plate top "
-           "(z 10) to the indent ceiling: 9 mm installed.", fill=(60, 60, 60), font=fs)
+           "z = 0 is the plate bottom. Paper drawn 0.1 mm thick (zero in the fit). "
+           f"Spring installed {SPRING_LEN:g} mm: flange pocket floor z {Z_FL_TOP - INDENT:g} "
+           f"to plate pocket ceiling z {PLATE_INDENT:g}.", fill=(60, 60, 60), font=fs)
     img.save(path)
 
 
@@ -677,8 +767,9 @@ def main():
           f"diff {vol_mesh - vol_an:+.2e} cm3")
     assert abs(vol_mesh - vol_an) < 0.01, "mesh volume differs from analytic volume"
     write_layout(caps)
+    write_plate_stl()
     write_svg(HERE / "aruco_markers_print.svg")
-    plate_tris = mesh([PLATE_BOX])
+    plate_tris = mesh([PLATE_BOX], plate_pockets_all())
     paper_tris = mesh([(PAPER[0], PAPER[1], PAPER[2], PAPER[3], T, T + 0.1)])
     write_preview_top(HERE / "preview_top.png")
     write_preview_iso_all(HERE / "preview_iso.png", caps, plate_tris, paper_tris)

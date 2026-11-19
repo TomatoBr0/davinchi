@@ -7,8 +7,15 @@ mounts = []; // [[x1,y1], [x2,y2], [x3,y3]]
 shaft_clearance_diameter = 0; // REQUIRED measurement before adding mounts
 head_recess_diameter = 5.5; // provisional: user's head estimate 5 mm + 0.5 mm total clearance
 head_recess_depth = 5; // user's approximate measurement; confirm before cutting
+// Paper-corner spring pockets in the plate underside. Values must match
+// paper-corners/make_corner_caps.py (POCKET = 5.0, PLATE_INDENT = 1.0, inset = (CLEAR_IN + HALF) / 2 = 7.0).
+spring_pockets = true;
+spring_pocket_size = 5.0;
+spring_pocket_depth = 1.0;
+spring_pocket_inset = 7.0; // pocket centre distance from each plate edge
 $fn = 96;
 assert(plate_thickness > head_recess_depth);
+assert(!spring_pockets || spring_pocket_depth < plate_thickness - 5);
 assert(len(mounts) == 0 || shaft_clearance_diameter > 0,
        "Measure and set shaft_clearance_diameter before adding mount positions.");
 assert(len(mounts) == 0 || head_recess_diameter > shaft_clearance_diameter);
@@ -24,4 +31,12 @@ difference() {
         translate([p[0],p[1],plate_thickness-head_recess_depth])
             cylinder(h=head_recess_depth+0.1, d=head_recess_diameter);
     }
+    // Spring pockets cut from the plate BOTTOM at the four corners (z -0.1 .. spring_pocket_depth).
+    if (spring_pockets)
+        for (c = [[spring_pocket_inset, spring_pocket_inset],
+                  [plate_width-spring_pocket_inset, spring_pocket_inset],
+                  [plate_width-spring_pocket_inset, plate_depth-spring_pocket_inset],
+                  [spring_pocket_inset, plate_depth-spring_pocket_inset]])
+            translate([c[0]-spring_pocket_size/2, c[1]-spring_pocket_size/2, -0.1])
+                cube([spring_pocket_size, spring_pocket_size, spring_pocket_depth+0.1]);
 }

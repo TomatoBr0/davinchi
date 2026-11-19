@@ -5,7 +5,8 @@
     "template": "DaVinci_Plate_Editable.scad",
     "width": 220.0,
     "depth": 285.0,
-    "thickness": 10.0
+    "thickness": 10.0,
+    "spring_pockets_stl": "DaVinci_Plate_220x285x10mm_SpringPockets.stl"
   },
   "paper": {
     "size": [
@@ -28,9 +29,10 @@
     "half": 13.0,
     "centred_on": "plate corner",
     "top_t": 2.4,
-    "top_z_bottom": 17.8,
-    "top_z": 20.2,
-    "top_above_plate_top": 10.2,
+    "top_z_bottom": 10.0,
+    "top_z": 12.4,
+    "top_above_plate_top": 2.4,
+    "top_above_paper": 2.4,
     "footprint_bl_xy": [
       -13.0,
       -13.0,
@@ -50,40 +52,67 @@
     "clear": 0.2,
     "outer_face_bl": -3.2,
     "z_range": [
-      -1.8,
-      17.8
+      -9.2,
+      12.4
     ]
   },
-  "lips": {
-    "inset_under_plate": 2.0,
-    "thickness": 1.6,
-    "zclear": 0.2,
+  "flange": {
+    "thickness": 2.4,
     "z_range": [
-      -1.8,
-      -0.2
+      -9.2,
+      -6.8
     ],
-    "below_plate_bottom": 1.8
+    "xy_bl": [
+      -3.2,
+      -3.2,
+      13.0,
+      13.0
+    ],
+    "bottom_below_plate_bottom": 9.2
   },
   "spring": {
     "od": 4.5,
     "free": 12.0,
     "preload": 3.0,
     "installed": 9.0,
+    "solid_height_guess": 4.0,
     "pocket_side": 5.0,
-    "pocket_bl_xy": [
-      5.025,
-      5.4,
-      10.025,
-      10.4
+    "pocket_centre_bl_xy": [
+      7.0,
+      7.0
     ],
-    "pocket_z": [
-      16.8,
-      19.0
+    "flange_pocket_bl_xy": [
+      4.5,
+      4.5,
+      9.5,
+      9.5
     ],
-    "indent": 1.2
+    "flange_pocket_z": [
+      -8.0,
+      -6.8
+    ],
+    "flange_indent": 1.2,
+    "plate_pocket_bl_xy": [
+      4.5,
+      4.5,
+      9.5,
+      9.5
+    ],
+    "plate_pocket_z": [
+      -1.0,
+      1.0
+    ],
+    "plate_indent": 1.0,
+    "span_flange_floor_to_plate_ceiling": 9.0
   },
-  "gap": 7.8,
-  "gap_definition": "SPRING_FREE - INDENT - PRELOAD; clear height from plate top to top underside",
+  "gap_b": 6.8,
+  "gap_b_definition": "SPRING_FREE - INDENT - PLATE_INDENT - PRELOAD; flange top (z -GAP_B) to plate bottom (z 0)",
+  "lift": {
+    "max_lift_gap_closes": 6.8,
+    "usable_lift": 5.0,
+    "usable_definition": "(SPRING_FREE - PRELOAD) - SPRING_SOLID; SPRING_SOLID is a guess, measure it",
+    "note": "max lift is GAP_B; the real limit is the spring's solid height"
+  },
   "sticker": {
     "size": 24.0,
     "cell": 3.0,
@@ -104,7 +133,7 @@
         -12.0,
         -12.0
       ],
-      "top_z": 20.2,
+      "top_z": 12.4,
       "tab_xy": [
         -13.0,
         -13.0,
@@ -122,7 +151,7 @@
         208.0,
         -12.0
       ],
-      "top_z": 20.2,
+      "top_z": 12.4,
       "tab_xy": [
         207.0,
         -13.0,
@@ -140,7 +169,7 @@
         208.0,
         273.0
       ],
-      "top_z": 20.2,
+      "top_z": 12.4,
       "tab_xy": [
         207.0,
         272.0,
@@ -158,7 +187,7 @@
         -12.0,
         273.0
       ],
-      "top_z": 20.2,
+      "top_z": 12.4,
       "tab_xy": [
         -13.0,
         272.0,
@@ -172,9 +201,83 @@
       246.0,
       311.0
     ],
-    "walls_and_lips_overall_xy": [
+    "walls_and_flange_overall_xy": [
       226.4,
       291.4
     ]
+  },
+  "plate_pockets": {
+    "0": {
+      "corner": "bottom-left",
+      "xy": [
+        4.5,
+        4.5,
+        9.5,
+        9.5
+      ],
+      "centre": [
+        7.0,
+        7.0
+      ],
+      "z": [
+        -1.0,
+        1.0
+      ],
+      "side": 5.0
+    },
+    "1": {
+      "corner": "bottom-right",
+      "xy": [
+        210.5,
+        4.5,
+        215.5,
+        9.5
+      ],
+      "centre": [
+        213.0,
+        7.0
+      ],
+      "z": [
+        -1.0,
+        1.0
+      ],
+      "side": 5.0
+    },
+    "2": {
+      "corner": "top-right",
+      "xy": [
+        210.5,
+        275.5,
+        215.5,
+        280.5
+      ],
+      "centre": [
+        213.0,
+        278.0
+      ],
+      "z": [
+        -1.0,
+        1.0
+      ],
+      "side": 5.0
+    },
+    "3": {
+      "corner": "top-left",
+      "xy": [
+        4.5,
+        275.5,
+        9.5,
+        280.5
+      ],
+      "centre": [
+        7.0,
+        278.0
+      ],
+      "z": [
+        -1.0,
+        1.0
+      ],
+      "side": 5.0
+    }
   }
 }
