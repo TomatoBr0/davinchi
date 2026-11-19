@@ -1,17 +1,11 @@
 {
   "units": "mm",
-  "origin": "plate lower-left corner, top view: +X right, +Y up, Z up; plate occupies z 0..T; all caps are in assembled plate coordinates",
+  "origin": "plate lower-left corner, top view: +X right, +Y up, Z up; plate occupies x 0..W, y 0..D, z 0..T; all tabs are in assembled plate coordinates",
   "plate": {
     "template": "DaVinci_Plate_Editable.scad",
     "width": 220.0,
     "depth": 285.0,
-    "thickness": 10.0,
-    "extent_xy": [
-      0,
-      0,
-      220.0,
-      285.0
-    ]
+    "thickness": 10.0
   },
   "paper": {
     "size": [
@@ -26,88 +20,161 @@
     ],
     "margin_side": 2.05,
     "margin_end": 2.8,
-    "centred": true
+    "centred": true,
+    "thickness_drawn_in_preview": 0.1
   },
-  "cap": {
-    "wall": 3.0,
-    "clearance": 0.2,
-    "reach": 38.0,
-    "slot": 0.6,
-    "height_above_paper": 10.0,
-    "top_z": 20.0,
-    "footprint_xy_bl": [
-      -3.2,
-      -3.2,
-      38.0,
-      38.0
+  "tab": {
+    "side": 26.0,
+    "half": 13.0,
+    "centred_on": "plate corner",
+    "top_t": 2.4,
+    "top_z_bottom": 17.8,
+    "top_z": 20.2,
+    "top_above_plate_top": 10.2,
+    "footprint_bl_xy": [
+      -13.0,
+      -13.0,
+      13.0,
+      13.0
     ],
-    "footprint_size": 41.2,
-    "inlay_depth": 0.6,
-    "cell": 4.0,
-    "print_orientation": "top face down"
+    "paper_covered_bl_xy": [
+      2.05,
+      2.8,
+      13.0,
+      13.0
+    ],
+    "print_orientation": "top face down on the bed"
   },
-  "footprint_assembled": [
-    226.4,
-    291.4
-  ],
+  "walls": {
+    "wall": 3.0,
+    "clear": 0.2,
+    "outer_face_bl": -3.2,
+    "z_range": [
+      -1.8,
+      17.8
+    ]
+  },
+  "lips": {
+    "inset_under_plate": 2.0,
+    "thickness": 1.6,
+    "zclear": 0.2,
+    "z_range": [
+      -1.8,
+      -0.2
+    ],
+    "below_plate_bottom": 1.8
+  },
+  "spring": {
+    "od": 4.5,
+    "free": 12.0,
+    "preload": 3.0,
+    "installed": 9.0,
+    "pocket_side": 5.0,
+    "pocket_bl_xy": [
+      5.025,
+      5.4,
+      10.025,
+      10.4
+    ],
+    "pocket_z": [
+      16.8,
+      19.0
+    ],
+    "indent": 1.2
+  },
+  "gap": 7.8,
+  "gap_definition": "SPRING_FREE - INDENT - PRELOAD; clear height from plate top to top underside",
+  "sticker": {
+    "size": 24.0,
+    "cell": 3.0,
+    "quiet_cells": 1,
+    "black_size": 18.0,
+    "printed": true,
+    "print_scale": "100%"
+  },
   "dictionary": "DICT_4X4_50",
-  "marker_black_size": 24.0,
   "markers": {
     "0": {
       "corner": "bottom-left",
       "center": [
-        17.4,
-        17.4
+        0.0,
+        0.0
       ],
-      "top_z": 20.0,
-      "cap_xy": [
-        -3.2,
-        -3.2,
-        38.0,
-        38.0
+      "sticker_origin_bl": [
+        -12.0,
+        -12.0
+      ],
+      "top_z": 20.2,
+      "tab_xy": [
+        -13.0,
+        -13.0,
+        13.0,
+        13.0
       ]
     },
     "1": {
       "corner": "bottom-right",
       "center": [
-        202.6,
-        17.4
+        220.0,
+        0.0
       ],
-      "top_z": 20.0,
-      "cap_xy": [
-        182.0,
-        -3.2,
-        223.2,
-        38.0
+      "sticker_origin_bl": [
+        208.0,
+        -12.0
+      ],
+      "top_z": 20.2,
+      "tab_xy": [
+        207.0,
+        -13.0,
+        233.0,
+        13.0
       ]
     },
     "2": {
       "corner": "top-right",
       "center": [
-        202.6,
-        267.6
+        220.0,
+        285.0
       ],
-      "top_z": 20.0,
-      "cap_xy": [
-        182.0,
-        247.0,
-        223.2,
-        288.2
+      "sticker_origin_bl": [
+        208.0,
+        273.0
+      ],
+      "top_z": 20.2,
+      "tab_xy": [
+        207.0,
+        272.0,
+        233.0,
+        298.0
       ]
     },
     "3": {
       "corner": "top-left",
       "center": [
-        17.4,
-        267.6
+        0.0,
+        285.0
       ],
-      "top_z": 20.0,
-      "cap_xy": [
-        -3.2,
-        247.0,
-        38.0,
-        288.2
+      "sticker_origin_bl": [
+        -12.0,
+        273.0
+      ],
+      "top_z": 20.2,
+      "tab_xy": [
+        -13.0,
+        272.0,
+        13.0,
+        298.0
       ]
     }
+  },
+  "footprint_assembled": {
+    "tabs_overall_xy": [
+      246.0,
+      311.0
+    ],
+    "walls_and_lips_overall_xy": [
+      226.4,
+      291.4
+    ]
   }
 }
