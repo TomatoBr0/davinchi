@@ -10,6 +10,12 @@ Read [DAVINCI_HARDWARE_CONTEXT.md](DAVINCI_HARDWARE_CONTEXT.md) first for measur
 
 The [220 x 285 x 10 mm paper-bed design](cad/base-plate/) includes the blank STL, editable OpenSCAD model, full-size fit-check SVG and original ZIP. Mounting positions and physical clearance remain unverified.
 
+## Single-motor Arduino bench test
+
+Open [DaVinci_One_Motor_Test.ino](firmware/DaVinci_One_Motor_Test/DaVinci_One_Motor_Test.ino) in its matching folder using Arduino IDE. Select **Arduino Uno**, choose the USB port, and upload with motor 12V disconnected. Read the [wiring and first-test instructions](firmware/DaVinci_One_Motor_Test/README.md) before connecting the driver/motor.
+
+Serial Monitor: **115200 baud**. Send `s` for one bounded test (40 slow steps each way); `x` aborts. Outputs are disabled at boot and after each test. STEP = D2, DIR = D5, ENA = D8; use the external ENA pull-up described in the instructions. This standalone sketch replaces any current Uno firmware. The actual driver header's five middle control positions and VREF still need verification before applying motor power.
+
 ## $0-first hardware plan
 
 **Buy nothing yet.** Check whether the Da Vinci's removable A4988 drivers survived the fried motherboard, and reuse the original 12V PSU, X/Y/Z motors, and Elegoo Uno. The CNC shield and ESP32 are optional for the first USB-controlled prototype. See [the $0-first salvage checklist](docs/zero-cost-build.md) and [hardware cautions](docs/hardware.md). Driver pinouts, motor-coil pairs, current limits and protective components must be verified before applying power.
