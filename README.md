@@ -30,6 +30,10 @@ Serial Monitor: **115200 baud**. Send `s` for one bounded test (40 slow steps ea
 - Preview/export real **SVG** and **three-axis GRBL-style G-code**, including optional tiny Z variation. Z modulation defaults **off**.
 - No web framework, cloud account, API keys or third-party runtime dependencies.
 
+## Hosted web app
+
+The deployed Da Vinci handwriting studio and its five daily Web Push writing reminders live in [cloud/](cloud/README.md). The Python app below remains the offline prototype.
+
 ## Quick start
 
 Requires Python 3.10+.
