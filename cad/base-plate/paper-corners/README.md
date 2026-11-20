@@ -17,6 +17,10 @@ the top of each tab, so the tabs are single colour.
   (print at 100%)
 - `layout.json` - parameters, geometry, paper rectangle, marker centres, plate pocket centres
 - `preview_top.png`, `preview_iso.png`, `preview_cap_section.png` - renders from the generator
+- `preview_corner.png` - close-up of the bottom-left corner (plate cut at 45 mm): from above, and from
+  below with the flange, the plate underside spring pocket and the spring (red)
+- `preview_tab_inside.png` - tab id 0 alone, seen from the plate side, with the spring indent,
+  the slot and the handle labelled; plus a straight-on inset
 - `make_corner_caps.py` - the generator (numpy + Pillow only)
 
 ## How it works

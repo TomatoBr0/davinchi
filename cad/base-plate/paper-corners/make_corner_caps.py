@@ -9,6 +9,7 @@ intervals to the other three corners, and writes into this folder:
   layout.json                      parameters, geometry, paper rect, marker centres
   ../DaVinci_Plate_220x285x10mm_SpringPockets.stl   plate with 4 underside spring pockets
   preview_top.png, preview_iso.png, preview_cap_section.png
+  preview_corner.png, preview_tab_inside.png   (close-up of the bottom-left corner; inside view of tab 0)
 
 Coordinates: plate lower-left corner = origin, +X right, +Y up (top view), Z up.
 The plate occupies x 0..W, y 0..D, z 0..T. Every solid is a union of axis-aligned
@@ -561,8 +562,11 @@ def write_preview_top(path):
     img.save(path)
 
 
-def _view():
-    c = np.array([1.0, -1.0, 1.2])
+DEFAULT_VIEW = (1.0, -1.0, 1.2)
+
+
+def _view(direction=DEFAULT_VIEW):
+    c = np.array(direction, float)
     c /= np.linalg.norm(c)                       # direction toward the viewer
     right = np.cross([0.0, 0.0, 1.0], c)
     right /= np.linalg.norm(right)
@@ -582,17 +586,38 @@ def quad_tris(x0, y0, x1, y1, z):
     return np.array([[a, b, c], [a, c, d]], dtype=float)
 
 
-def write_preview_iso(path, layers):
-    """Isometric z-buffer render. layers: list of (triangles Nx3x3, rgb, shaded)."""
-    from PIL import Image
-    c, basis, light = _view()
-    allp = np.concatenate([(t.reshape(-1, 3)) @ basis for t, _, _ in layers])
-    mn, mx = allp.min(axis=0), allp.max(axis=0)
-    WIMG, M, HEAD = 1200, 30, 40
-    scale = (WIMG - 2 * M) / (mx[0] - mn[0])
-    HIMG = int(round((mx[1] - mn[1]) * scale + 2 * M + HEAD))
-    zbuf = np.full((HIMG, WIMG), -np.inf)
-    img = np.full((HIMG, WIMG, 3), 255, np.uint8)
+class Frame:
+    """Orthographic view. Image px = ((u - mn_u) * scale + ox, (mx_v - v) * scale + oy)."""
+
+    def __init__(self, direction, mn, mx, scale, ox, oy):
+        self.c, self.basis, self.light = _view(direction)
+        self.mn, self.mx, self.scale, self.ox, self.oy = mn, mx, scale, ox, oy
+
+    def px(self, pts):
+        uv = np.asarray(pts, float) @ self.basis
+        return np.stack([uv[..., 0] - self.mn[0], self.mx[1] - uv[..., 1]], axis=-1) \
+            * self.scale + [self.ox, self.oy]
+
+
+def fit_frame(direction, pts, box_w, box_h, margin=20.0, scale=None):
+    """Frame that centres pts in a box_w x box_h image. A given scale is used as is."""
+    _, basis, _ = _view(direction)
+    uv = np.asarray(pts, float).reshape(-1, 3) @ basis
+    mn, mx = uv.min(axis=0), uv.max(axis=0)
+    if scale is None:
+        scale = min((box_w - 2 * margin) / (mx[0] - mn[0]), (box_h - 2 * margin) / (mx[1] - mn[1]))
+    ox = (box_w - (mx[0] - mn[0]) * scale) / 2
+    oy = (box_h - (mx[1] - mn[1]) * scale) / 2
+    return Frame(direction, mn, mx, scale, ox, oy)
+
+
+def render_iso(layers, frame, w, h):
+    """Z-buffer render into an h x w RGB array. layers: list of (triangles Nx3x3, rgb, shaded).
+    Faces are flat-shaded from their normal. Occlusion comes from the per-pixel depth test,
+    so the draw order does not matter."""
+    c, light = frame.c, frame.light
+    zbuf = np.full((h, w), -np.inf)
+    img = np.full((h, w, 3), 255, np.uint8)
     for tris, colour, shaded in layers:
         for tri in tris:
             n = np.cross(tri[1] - tri[0], tri[2] - tri[0])
@@ -606,13 +631,11 @@ def write_preview_iso(path, layers):
             if shaded:
                 col = col * (0.45 + 0.55 * max(float(n @ light), 0.0))
             col = np.clip(col, 0, 255).astype(np.uint8)
-            # map so that +Y points up in the image
-            p2 = np.stack([(tri @ basis)[:, 0] - mn[0], (mx[1] - (tri @ basis)[:, 1])], axis=1)
-            p2 = p2 * scale + [M, M + HEAD]
+            p2 = frame.px(tri)
             dep = tri @ c
             xs, ys = p2[:, 0], p2[:, 1]
-            x0, x1 = max(int(np.floor(xs.min())), 0), min(int(np.ceil(xs.max())), WIMG - 1)
-            y0, y1 = max(int(np.floor(ys.min())), 0), min(int(np.ceil(ys.max())), HIMG - 1)
+            x0, x1 = max(int(np.floor(xs.min())), 0), min(int(np.ceil(xs.max())), w - 1)
+            y0, y1 = max(int(np.floor(ys.min())), 0), min(int(np.ceil(ys.max())), h - 1)
             if x0 > x1 or y0 > y1:
                 continue
             gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
@@ -630,7 +653,20 @@ def write_preview_iso(path, layers):
             m = inside & (z > zsub)
             zsub[m] = z[m]
             isub[m] = col
-    Image.fromarray(img).save(path)
+    return img
+
+
+def write_preview_iso(path, layers):
+    """Isometric render of the whole assembly (the original view, unchanged)."""
+    from PIL import Image
+    _, basis, _ = _view()
+    allp = np.concatenate([(t.reshape(-1, 3)) @ basis for t, _, _ in layers])
+    mn, mx = allp.min(axis=0), allp.max(axis=0)
+    WIMG, M, HEAD = 1200, 30, 40
+    scale = (WIMG - 2 * M) / (mx[0] - mn[0])
+    HIMG = int(round((mx[1] - mn[1]) * scale + 2 * M + HEAD))
+    frame = Frame(DEFAULT_VIEW, mn, mx, scale, M, M + HEAD)
+    Image.fromarray(render_iso(layers, frame, WIMG, HIMG)).save(path)
 
 
 def write_preview_iso_all(path, caps, plate_tris, paper_tris):
@@ -647,6 +683,149 @@ def write_preview_iso_all(path, caps, plate_tris, paper_tris):
     layers.append((np.concatenate(white), (250, 250, 250), False))
     layers.append((np.concatenate(black), (15, 15, 15), False))
     write_preview_iso(path, layers)
+
+
+CORNER_X1 = 45.0                                   # close-up crop: x, y in [-20, 45]
+
+
+def corner_layers(caps):
+    """Tab id 0 with the plate corner block (cut at x, y = CORNER_X1), paper and its sticker."""
+    x1 = CORNER_X1
+    plate = mesh([(0.0, 0.0, x1, x1, 0.0, T)], [plate_pocket_bl()])
+    paper = mesh([(PAPER[0], PAPER[1], min(PAPER[2], x1), min(PAPER[3], x1), T, T + 0.1)])
+    ox, oy = sticker_origin(0)
+    white = quad_tris(ox, oy, ox + STICKER, oy + STICKER, CAP_TOP + 0.05)
+    black = np.concatenate([quad_tris(a, b, c, d, CAP_TOP + 0.10)
+                            for a, b, c, d in sticker_cells_plate(0)])
+    return [(_tri_array(plate), (205, 205, 205), True),
+            (_tri_array(paper), (252, 252, 246), True),
+            (_tri_array(caps[0]["mesh"]), (92, 120, 148), True),
+            (white, (250, 250, 250), False),
+            (black, (15, 15, 15), False)]
+
+
+def spring_path(n=160):
+    """Red helix on the pocket axis, from the flange pocket floor to the plate pocket ceiling."""
+    t = np.linspace(0.0, 1.0, n)
+    z0, z1 = Z_FL_TOP - INDENT, PLATE_INDENT           # -8.0 .. 1.0 (9 mm installed)
+    ang = 2 * np.pi * 6 * t
+    return np.stack([POCKET_CX + 1.6 * np.cos(ang), POCKET_CY + 1.6 * np.sin(ang),
+                     z0 + (z1 - z0) * t], axis=1)
+
+
+def place_labels(d, items, font, left_x, right_x, mid):
+    """items: (text, x, y) in canvas px. Targets left of mid get a column whose text ends at
+    left_x; the others a column whose text starts at right_x. Labels are at least 40 px apart,
+    each joined to its target by a leader line."""
+    for side in ("L", "R"):
+        group = sorted([it for it in items if (it[1] < mid) == (side == "L")], key=lambda it: it[2])
+        last = -1e9
+        for name, x, y in group:
+            ly = max(y, last + 40)
+            last = ly
+            if side == "L":
+                tx, lx = left_x - d.textlength(name, font=font), left_x + 2
+            else:
+                tx, lx = right_x, right_x - 2
+            d.line([(x, y), (lx, ly)], fill=(60, 60, 60), width=1)
+            d.ellipse([x - 3, y - 3, x + 3, y + 3], fill=(200, 30, 30))
+            box = d.textbbox((tx, ly), name, font=font, anchor="lm")
+            d.rectangle([box[0] - 3, box[1] - 2, box[2] + 3, box[3] + 2], fill=(255, 255, 255))
+            d.text((tx, ly), name, fill=(0, 0, 0), font=font, anchor="lm")
+
+
+def write_preview_corner(path, caps):
+    """Two panels of the bottom-left corner: from above, and from below (flange and spring)."""
+    from PIL import Image, ImageDraw
+    BOX_W, BOX_H, TOP_Y = 600, 780, 90
+    dirs = [(-1.0, -1.4, 1.0), (-1.0, -1.4, -0.8)]
+    layers = corner_layers(caps)
+    pts = np.concatenate([t.reshape(-1, 3) for t, _, _ in layers])
+    scale = min(fit_frame(d, pts, BOX_W, BOX_H).scale for d in dirs)   # same scale in both
+    frames = [fit_frame(d, pts, BOX_W, BOX_H, scale=scale) for d in dirs]
+    canvas = Image.new("RGB", (1200, 900), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    f_big, f_small = load_font(20), load_font(15)
+    d.text((12, 10), f"Tab id 0 (bottom-left) on the plate corner. Cut at x, y = {CORNER_X1:g} mm "
+                     f"(paper, plate, tab top with its sticker)", fill=(0, 0, 0), font=f_big)
+    names = ["1. from above: camera (-1, -1.4, +1), towards the corner",
+             "2. from below: camera (-1, -1.4, -0.8)"]
+    for i, (fr, name) in enumerate(zip(frames, names)):
+        canvas.paste(Image.fromarray(render_iso(layers, fr, BOX_W, BOX_H)), (i * BOX_W, TOP_Y))
+        d.text((i * BOX_W + 12, TOP_Y - 26), name, fill=(0, 0, 0), font=f_small)
+    d.line([(BOX_W, TOP_Y - 30), (BOX_W, TOP_Y + BOX_H)], fill=(160, 160, 160), width=1)
+    sp_world = spring_path()
+    sp = [tuple(p) for p in frames[1].px(sp_world) + [BOX_W, TOP_Y]]
+    d.line(sp, fill=(220, 20, 20), width=4, joint="curve")
+    # feature labels: panel 1 on the left of its panel, panel 2 on the right of its panel
+    spring_mid = sp_world[np.argmin(np.abs(sp_world[:, 2] + 4.0))]
+    up = [("tab top with sticker id 0", (-6.0, -6.0, CAP_TOP + 0.1)),
+          ("plate top, cut at x, y = 45", (40.0, 20.0, T))]
+    dn = [("flange, under the plate", (9.0, 9.0, Z_FL_BOT)),
+          ("spring (red)", tuple(spring_mid)),
+          ("plate underside pocket 5x5x1", (POCKET_CX, POCKET_CY, PLATE_INDENT))]
+    for name_pos, off, fr in ((up, 0, frames[0]), (dn, BOX_W, frames[1])):
+        items = []
+        for name, p in name_pos:
+            x, y = fr.px(np.array(p, float)) + [off, TOP_Y]
+            items.append((name, float(x), float(y)))
+        if off == 0:
+            place_labels(d, items, f_small, left_x=0, right_x=430, mid=-1)
+        else:
+            place_labels(d, items, f_small, left_x=0, right_x=935, mid=-1)
+    d.text((12, 878), "Red: spring, z -8.0 (flange pocket floor) to +1.0 (plate pocket ceiling), "
+                      "on the pocket axis. Drawn over the flange, which hides it.",
+           fill=(0, 0, 0), font=f_small)
+    canvas.save(path)
+
+
+def write_preview_tab_inside(path, caps):
+    """Tab id 0 alone, seen from the plate side (+x, +y), with labels; plus a straight-on inset."""
+    from PIL import Image, ImageDraw
+    main_dir, side_dir = (1.0, 1.3, 0.35), (1.0, 1.0, 0.0)
+    arr = _tri_array(caps[0]["mesh"])
+    _, pocket = cap_boxes_bl()
+    px0, py0, px1, py1, pz0, pz1 = pocket
+    cen, e = arr.mean(axis=1), 1e-6
+    in_pocket = ((cen[:, 0] >= px0 - e) & (cen[:, 0] <= px1 + e) & (cen[:, 1] >= py0 - e)
+                 & (cen[:, 1] <= py1 + e) & (cen[:, 2] >= pz0 - e) & (cen[:, 2] <= pz1 + e))
+    assert in_pocket.any(), "no spring-indent faces found in the tab mesh"
+    layers = [(arr[~in_pocket], (92, 120, 148), True),
+              (arr[in_pocket], (44, 58, 78), True)]          # indent: darker base colour
+    MAIN_X, MAIN_Y, MAIN_W, MAIN_H = 330, 60, 640, 680
+    fm = fit_frame(main_dir, arr, MAIN_W, MAIN_H, margin=40)
+    fs = fit_frame(side_dir, arr, 260, 240, margin=14)
+
+    canvas = Image.new("RGB", (1200, 900), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    f_big, f_lab, f_small = load_font(20), load_font(16), load_font(14)
+    canvas.paste(Image.fromarray(render_iso(layers, fm, MAIN_W, MAIN_H)), (MAIN_X, MAIN_Y))
+    canvas.paste(Image.fromarray(render_iso(layers, fs, 260, 240)), (10, 620))
+    d.text((12, 10), "Tab id 0 alone (no plate, no paper), seen from inside the tab", fill=(0, 0, 0),
+           font=f_big)
+    d.text((MAIN_X, 36), "from the plate side: camera (1, 1.3, 0.35), looking at the open +x, +y faces",
+           fill=(0, 0, 0), font=f_small)
+    d.text((10, 596), "same tab, straight-on from inside: camera (1, 1, 0)", fill=(0, 0, 0),
+           font=f_small)
+
+    targets = [("top (rests on paper)", (13.0, 6.0, 11.2)),
+               ("wall", (-0.2, 6.0, -2.0)),
+               ("flange", (11.0, 11.0, -6.8)),
+               ("spring indent 5x5x1.2", (POCKET_CX - POCKET / 2, POCKET_CY, Z_FL_TOP - INDENT / 2)),
+               ("plate slides in here", (12.5, 3.0, 1.5)),
+               ("handle (outside the plate)", (-6.0, -6.0, CAP_TOP))]
+    items = []
+    for name, p in targets:
+        x, y = fm.px(np.array(p, float)) + [MAIN_X, MAIN_Y]
+        items.append((name, float(x), float(y)))
+    place_labels(d, items, f_lab, left_x=300, right_x=1000, mid=MAIN_X + MAIN_W / 2)
+    d.text((MAIN_X, 760), "Dimensions (mm): TOP_T 2.4 (top z 10 to 12.4), FLANGE_T 2.4 (flange z -9.2 to -6.8).",
+           fill=(0, 0, 0), font=f_small)
+    d.text((MAIN_X, 782), "Slot where the plate goes: flange top z -6.8 to top underside z 10 = "
+                          "10 (plate) + 6.8 (GAP_B, spring space).", fill=(0, 0, 0), font=f_small)
+    d.text((MAIN_X, 804), f"Spring indent: {POCKET:g} x {POCKET:g} x {INDENT:g} mm pocket in the flange top, "
+                          f"darker shade.", fill=(0, 0, 0), font=f_small)
+    canvas.save(path)
 
 
 def write_cap_section(path):
@@ -774,6 +953,8 @@ def main():
     write_preview_top(HERE / "preview_top.png")
     write_preview_iso_all(HERE / "preview_iso.png", caps, plate_tris, paper_tris)
     write_cap_section(HERE / "preview_cap_section.png")
+    write_preview_corner(HERE / "preview_corner.png", caps)
+    write_preview_tab_inside(HERE / "preview_tab_inside.png", caps)
     print(f"plate {W:g} x {D:g} x {T:g}; tab top z {CAP_TOP:g}; "
           f"tab extent {W + S:g} x {D + S:g} mm")
 
