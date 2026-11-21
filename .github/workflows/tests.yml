@@ -16,9 +16,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Verify Python compiles
-        run: python -m compileall -q app.py tests
+        run: python -m compileall -q app.py photo_slicer.py photo_sketch.py photo_patterns.py tests
       - name: Parse browser JavaScript
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/photo.js
       - name: Run real DB/HTTP/composition tests
         run: python -m unittest discover -s tests -v
   uno:
@@ -29,3 +31,4 @@ jobs:
       - run: arduino-cli core update-index
       - run: arduino-cli core install arduino:avr
       - run: arduino-cli compile --fqbn arduino:avr:uno firmware/plotter
+

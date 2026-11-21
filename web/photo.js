@@ -2,6 +2,19 @@
 (() => {
   const el = id => document.getElementById(id);
   let raster = null, result = null, generation = 0;
+  const styleNotes = {
+    scribble: "Long overlapping curves build shadows while traced contours retain facial features.",
+    tour: "One continuous path links irregularly scattered points, with more points in dark areas.",
+    squiggle: "Each row becomes a flowing wave. Dark areas make tighter, taller waves.",
+    spiral: "One winding oval spiral builds shading with small waves. The outer corners of the photo are cropped.",
+    outlines: "Connected contours trace contrasts and facial features. Lower the threshold for more detail.",
+    crosshatch: "Crossing line layers build progressively darker shadows.",
+    diagonal: "Parallel diagonal lines vary in density with the image tone.",
+    stipple: "Irregular dots build the shadows. Each dot requires a pen lift."
+  };
+  el("photo-style").addEventListener("change", () => {
+    el("photo-style-note").textContent = styleNotes[el("photo-style").value];
+  });
   const status = message => { el("photo-status").textContent = message; };
   function invalidate() {
     generation++;

@@ -32,9 +32,24 @@ Serial Monitor: **115200 baud**. Send `s` for one bounded test (40 slow steps ea
 
 ## Picture slicer
 
-Run `python app.py` and use **Picture to drawing**. Load a JPEG, PNG, WebP or another image supported by your browser. Choose diagonal lines, crosshatching, scribbles, edge sketch or stippling. Adjust page dimensions, spacing, contrast and ink threshold, then generate and inspect the preview. Download SVG for a vector drawing or the Uno job for `send_plot.py`.
+Run `python app.py` and use **Picture to drawing**. Load a JPEG, PNG, WebP or another image supported by your browser. Pick a drawing style, adjust page dimensions, spacing, contrast and ink threshold, and generate a preview. Download SVG or a Uno job for `send_plot.py`.
 
-The picture is fitted proportionally inside the page with a 5 mm minimum margin. Darker areas get denser marks. The seed makes scribble and dot variants repeatable. Images are sampled to at most 240 pixels on their longest side. Edge sketch follows detected contrast changes with short scanline marks. The generator preserves image orientation, and the machine profile still determines usable travel. Dense jobs may take considerable time, especially dots and scribbles with many bed lifts. Increase spacing to simplify them.
+| Style | Appearance and path behavior |
+| --- | --- |
+| Wandering ink sketch | Long curved scribbles seek remaining dark areas and build overlapping shadows, with traced contours retaining features. Lifts between disconnected areas. |
+| One continuous line | A single route through tone-weighted irregular points. Seeded sampling and bounded crossing removal give each portrait a different maze-like texture. |
+| Squiggle waves | Continuous horizontal rows with taller, tighter waves in dark regions. |
+| Spiral portrait | One oval spiral with tone-driven oscillations. Crops the image's outer corners. |
+| Contour sketch | Thinned gradients joined into feature-following polylines. |
+| Crosshatching | Multiple angles build layers of shadow. |
+| Diagonal lines | A single angle with density varying by darkness. |
+| Stippling | Irregular dots concentrated in dark regions. Each dot needs a pen lift. |
+
+The image fits proportionally inside the page with at least 5 mm margins. A repeatable seed controls scribbles, tours and dots. The browser samples images to a maximum of 240 pixels on the longest side. Rendering and export use the same paths. Thin-pen output is approximated in SVG at 0.28 mm. The image algorithms generate geometry from tone and contrast, so they cannot reproduce an artist's decisions about facial anatomy or which lines to omit.
+
+Spacing changes density. Increase it for a faster, looser result. Sketches use a bounded segment and distance budget, and all styles enforce an output-point limit. A dense drawing or thousands of pen lifts may take hours on the original bed-lift mechanism. The machine's measured travel still controls which page sizes can be plotted.
+
+The sketch method uses darkest-path selection and residual ink demand as described by [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/pfms.html). Squiggle, spiral and point-tour families are described by [Plotterfun](https://github.com/mitxela/plotterfun) and [SquiggleCam](https://github.com/msurguy/SquiggleCam). The implementations here use Python's standard library.
 
 ## Quick start
 

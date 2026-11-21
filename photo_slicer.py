@@ -15,8 +15,8 @@ def slice_photo(payload):
     pixels = payload.get("pixels")
     if not isinstance(pixels, list) or len(pixels) != width * height or any(type(p) is not int or not 0 <= p <= 255 for p in pixels):
         raise ValueError("Expected one grayscale byte per pixel")
-    style = payload.get("style", "diagonal")
-    if style not in ("diagonal", "crosshatch", "scribble", "outlines", "stipple"):
+    style = payload.get("style", "scribble")
+    if style not in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour"):
         raise ValueError("Unknown drawing style")
     page_w = num(payload.get("page_width_mm", 150), "Page width", 20, 300)
     page_h = num(payload.get("page_height_mm", 150), "Page height", 20, 300)
@@ -33,10 +33,24 @@ def slice_photo(payload):
     strokes = []
     points = 0
 
+    # A small separable blur suppresses pixel staircases while retaining edges.
+    tones = [max(0, min(1, ((1 - p / 255) - .5) * contrast + .5)) for p in pixels]
+    horizontal = []
+    for y in range(height):
+        for x in range(width):
+            horizontal.append((tones[y*width+max(0,x-1)] + 2*tones[y*width+x] + tones[y*width+min(width-1,x+1)]) / 4)
+    tones = [(horizontal[max(0,y-1)*width+x] + 2*horizontal[y*width+x] + horizontal[min(height-1,y+1)*width+x]) / 4
+             for y in range(height) for x in range(width)]
+
     def ink(x, y):
-        ix = min(width - 1, max(0, round(x / scale)))
-        iy = min(height - 1, max(0, round(y / scale)))
-        return max(0, min(1, ((1 - pixels[iy * width + ix] / 255) - .5) * contrast + .5))
+        px = min(width - 1, max(0, x / scale))
+        py = min(height - 1, max(0, y / scale))
+        ix, iy = int(px), int(py)
+        tx, ty = px - ix, py - iy
+        jx, jy = min(width - 1, ix + 1), min(height - 1, iy + 1)
+        top = tones[iy*width+ix]*(1-tx) + tones[iy*width+jx]*tx
+        bottom = tones[jy*width+ix]*(1-tx) + tones[jy*width+jx]*tx
+        return top*(1-ty) + bottom*ty
 
     def add(path):
         nonlocal points
@@ -47,9 +61,33 @@ def slice_photo(payload):
             raise ValueError("Drawing is too dense. Increase spacing or reduce page size.")
         strokes.append([(ox + min(draw_w, max(0, x)), oy + min(draw_h, max(0, y)), .5) for x, y in path])
 
-    if style in ("diagonal", "crosshatch", "outlines"):
+    if max(tones) <= threshold:
+        raise ValueError("No drawable marks. Lower the threshold or use a darker image.")
+
+    if style == "scribble":
+        from photo_sketch import scribble_paths, edge_paths
+        # Crisp feature contours anchor the looser shadow scribbles.
+        for path in edge_paths(tones, width, height, draw_w, draw_h, threshold):
+            add(path)
+        for path in scribble_paths(tones, width, height, draw_w, draw_h, spacing, rng, threshold):
+            add(path)
+    elif style == "outlines":
+        from photo_sketch import edge_paths
+        for path in edge_paths(tones, width, height, draw_w, draw_h, threshold):
+            add(path)
+    elif style in ("squiggle", "spiral", "tour"):
+        from photo_patterns import squiggle_paths, spiral_paths, tour_paths
+        if style == "tour":
+            paths = tour_paths(ink, draw_w, draw_h, spacing, rng)
+        elif style == "spiral":
+            paths = spiral_paths(ink, draw_w, draw_h, spacing)
+        else:
+            paths = squiggle_paths(ink, draw_w, draw_h, spacing)
+        for path in paths:
+            add(path)
+    elif style in ("diagonal", "crosshatch"):
         # Walk parallel scanlines. Shadow levels select extra hatch families.
-        angles = (45, -45, 0) if style == "crosshatch" else (0,) if style == "outlines" else (45,)
+        angles = (45, -45, 0) if style == "crosshatch" else (45,)
         step = min(.4, spacing / 2)
         for family, angle in enumerate(angles):
             a = math.radians(angle)
@@ -72,16 +110,10 @@ def slice_photo(payload):
                     active = False
                     if 0 <= x <= draw_w and 0 <= y <= draw_h:
                         tone = ink(x, y)
-                        if style == "outlines":
-                            gradient = max(abs(tone - ink(x + scale, y)),
-                                           abs(tone - ink(x, y + scale)))
-                            active = gradient > threshold
-                        else:
-                            # Ordered line dithering makes a single diagonal family
-                            # vary its density with tone, preserving smooth shading.
-                            level = (row % 5 + .5) / 5
-                            cutoff = threshold + family * .30
-                            active = tone > cutoff and (style == "crosshatch" or tone >= level)
+                        # Ordered line dithering preserves tone in one family.
+                        level = (row % 5 + .5) / 5
+                        cutoff = threshold + family * .30
+                        active = tone > cutoff and (style == "crosshatch" or tone >= level)
                     if active:
                         path.append((x, y))
                     else:
@@ -101,19 +133,10 @@ def slice_photo(payload):
                 tone = ink(x, y)
                 if tone <= threshold:
                     continue
-                if style == "stipple":
-                    if rng.random() < tone * tone:
-                        add([(x, y)])
-                else:
-                    radius = spacing * .43
-                    path = []
-                    phase = rng.random() * math.tau
-                    turns = 1 + 4 * tone
-                    for i in range(int(12 * turns) + 1):
-                        angle = phase + i * math.tau / 12
-                        r = radius * rng.uniform(.45, 1)
-                        path.append((x + math.cos(angle) * r, y + math.sin(angle) * r))
-                    add(path)
+                if rng.random() < tone * tone:
+                    x = min(draw_w, max(0, x + rng.uniform(-.42, .42) * spacing))
+                    y = min(draw_h, max(0, y + rng.uniform(-.42, .42) * spacing))
+                    add([(x, y)])
     if not strokes:
         raise ValueError("No drawable marks. Lower the threshold or use a darker image.")
     options = {"travel_feed_mm_min": 300, "write_feed_mm_min": 300}

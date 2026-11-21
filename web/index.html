@@ -18,11 +18,14 @@
     <label>Picture<input id="photo-file" type="file" accept="image/*"></label>
     <div id="photo-controls" class="fields">
       <label>Drawing style<select id="photo-style">
-        <option value="diagonal">Diagonal lines</option>
+        <option value="scribble">Wandering ink sketch</option>
+        <option value="tour">One continuous line</option>
+        <option value="squiggle">Squiggle waves</option>
+        <option value="spiral">Spiral portrait</option>
+        <option value="outlines">Contour sketch</option>
         <option value="crosshatch">Crosshatching</option>
-        <option value="scribble">Scribbles</option>
-        <option value="outlines">Edge sketch</option>
-        <option value="stipple">Dots / stippling</option>
+        <option value="diagonal">Diagonal lines</option>
+        <option value="stipple">Stippling</option>
       </select></label>
       <label>Page width, mm<input id="photo-width" type="number" value="150" min="20" max="300"></label>
       <label>Page height, mm<input id="photo-height" type="number" value="150" min="20" max="300"></label>
@@ -31,6 +34,7 @@
       <label>Ink threshold<input id="photo-threshold" type="number" value=".18" min=".02" max=".9" step=".02"></label>
       <label>Random seed<input id="photo-seed" type="number" value="1" min="0" max="2147483647"></label>
     </div>
+    <p id="photo-style-note">Long overlapping curves build shadows while traced contours retain facial features.</p>
     <div class="actions">
       <button id="photo-generate" class="primary" type="button">Generate drawing</button>
       <button id="photo-svg" class="secondary" type="button" disabled>Download SVG</button>
