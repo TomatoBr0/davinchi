@@ -48,17 +48,18 @@
       <label>Pen-down Z, mm<input id="z-down" type="number" value="0" step=".1"></label>
       <label>Z pressure variation, mm<input id="zvar" type="number" value="0" min="0" max=".15" step=".01"></label>
     </div>
-    <p class="warning">Z direction and calibration depend on the printer wiring. G-code is <strong>not machine-ready</strong>. Do not execute until limit switches, travel and tool height are verified.</p>
+    <p class="warning">The Uno job uses the pen heights in your machine calibration. The Z settings above apply to the GRBL preview.</p>
     <div class="actions">
       <button id="compose" class="primary" type="button">Compose / preview</button>
       <button id="download-svg" class="secondary" type="button" disabled>Download SVG</button>
-      <button id="download-gcode" class="secondary" type="button" disabled>Download G-code</button>
+      <button id="download-gcode" class="secondary" type="button" disabled>Download GRBL preview</button>
+      <button id="download-uno" class="secondary" type="button" disabled>Download Uno G-code</button>
     </div>
     <p id="compose-status" class="status" role="status">Train samples above, then compose.</p>
     <div class="preview" id="preview" aria-label="SVG handwriting preview"></div>
   </section>
 </main>
-<footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno + GRBL planned • ESP32 Wi-Fi bridge optional</footer>
+<footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno plotter controller • ESP32 Wi-Fi bridge optional</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>

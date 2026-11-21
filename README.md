@@ -2,7 +2,7 @@
 
 Turn an XYZprinting Da Vinci 1.0 with a failed motherboard into a handwriting plotter, using an Elegoo Arduino Uno, the original X/Y/Z mechanics, and a personal library of handwritten strokes.
 
-**Status:** working local software prototype; machine wiring and calibration **not yet verified**. The app does **not** communicate with or move the printer. Generated G-code is an offline, uncalibrated starting point, not a ready-to-run machine program.
+**Start here:** [From recorded handwriting to the Uno](docs/plotting.md). The local composer exports ordered stroke jobs, and the USB sender checks and streams them to the three-axis plotter sketch. Wiring, travel, steps/mm and pen heights still need verification on the real machine.
 
 ## Hardware handoff for Arduino development
 
@@ -80,7 +80,7 @@ docs/validation.md     manual functional test checklist
 - Photo tracing is manual; automatic segmentation, handwriting recognition and photo-to-ordered-strokes reconstruction are future work.
 - Variant selection is heuristic, not a trained ML handwriting model. Complex joins between *different* samples are not yet synthesized. For flowing handwriting, record longer connected sequences.
 - An Uno cannot do photo processing or handwriting generation; the host computer does that work.
-- SVG/G-code are exported in page coordinates, not in measured machine coordinates. Machine calibration, limit-switch support, homing, safe setup and serial communication are not implemented.
+- SVG/G-code are exported in page coordinates, not in measured machine coordinates. The Uno sender uses manually measured calibration and a manual origin. Automatic homing and endstop monitoring are not implemented.
 - Single-point ink marks/dots are represented as short dwell marks in G-code.
 
 ## License

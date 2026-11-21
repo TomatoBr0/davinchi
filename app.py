@@ -199,6 +199,12 @@ def render_gcode(strokes, opt):
     return "\n".join(lines) + "\n"
 
 
+def render_uno_gcode(strokes, opt):
+    """Export the composed paths for the Uno XY plus M3/M5 pen protocol."""
+    from slicer import render_uno_gcode
+    return render_uno_gcode(strokes, opt)
+
+
 def compose(payload, library):
     if not isinstance(payload, dict):
         raise ValueError("Expected an object")
@@ -270,9 +276,11 @@ def compose(payload, library):
         raise ValueError("No dictionary matches. Record handwriting first.")
     if sum(len(s) for s in strokes_out) > 100000:
         raise ValueError("Composed output exceeds 100000 points")
+    uno_gcode = render_uno_gcode(strokes_out, opt) if not missing else None
     return {
         "svg": render_svg(strokes_out, opt["page_width_mm"], opt["page_height_mm"]),
         "gcode": render_gcode(strokes_out, opt),
+        "uno_gcode": uno_gcode,
         "selected": selected, "missing": missing, "stroke_count": len(strokes_out),
         "machine_ready": False,
     }

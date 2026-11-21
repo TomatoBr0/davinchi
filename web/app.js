@@ -125,6 +125,7 @@ function download(content,filename,mime){
 }
 $("compose").addEventListener("click",async()=>{
   output=null;$("download-svg").disabled=true;$("download-gcode").disabled=true;
+  $("download-uno").disabled=true;
   const options={
     page_width_mm:Number($("width").value),
     page_height_mm:Number($("page-height").value),
@@ -141,10 +142,12 @@ $("compose").addEventListener("click",async()=>{
     output=result;
     $("preview").innerHTML=result.svg; // Server emits fixed SVG from validated numeric paths.
     $("download-svg").disabled=false;$("download-gcode").disabled=false;
+    $("download-uno").disabled=!result.uno_gcode;
     let message="Composed "+result.selected.length+" dictionary selections in "+
       result.stroke_count+" strokes.";
     if(result.missing.length)message+=" Missing: "+
       [...new Set(result.missing.map(x=>x.character))].join(" ")+". Add samples.";
+    if(result.missing.length)message+=" Uno export disabled until every glyph has a sample.";
     status("compose-status",message);
   }catch(err){$("preview").replaceChildren();status("compose-status",err.message,true);}
 });
@@ -153,5 +156,8 @@ $("download-svg").addEventListener("click",()=>{
 });
 $("download-gcode").addEventListener("click",()=>{
   if(output)download(output.gcode,"handwriting-PREVIEW-ONLY.nc","text/plain");
+});
+$("download-uno").addEventListener("click",()=>{
+  if(output?.uno_gcode)download(output.uno_gcode,"handwriting-UNO-PREVIEW-ONLY.nc","text/plain");
 });
 repaint();refresh();

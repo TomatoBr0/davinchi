@@ -1,0 +1,11 @@
+; 5 mm calibration square, beginning 1 mm from the manual origin
+G21
+G90
+M5
+G0 X1 Y1 F60
+M3
+G1 X6 Y1 F60
+G1 X6 Y6 F60
+G1 X1 Y6 F60
+G1 X1 Y1 F60
+M5
