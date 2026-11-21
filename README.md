@@ -37,19 +37,18 @@ Run `python app.py` and use **Picture to drawing**. Load a JPEG, PNG, WebP or an
 | Style | Appearance and path behavior |
 | --- | --- |
 | Wandering ink sketch | Long curved scribbles seek remaining dark areas and build overlapping shadows, with traced contours retaining features. Lifts between disconnected areas. |
-| One continuous line | A single route through tone-weighted irregular points. Seeded sampling and bounded crossing removal give each portrait a different maze-like texture. |
 | Squiggle waves | Continuous horizontal rows with taller, tighter waves in dark regions. |
-| Spiral portrait | One oval spiral with tone-driven oscillations. Crops the image's outer corners. |
 | Contour sketch | Thinned gradients joined into feature-following polylines. |
-| Crosshatching | Multiple angles build layers of shadow. |
-| Diagonal lines | A single angle with density varying by darkness. |
+| Spring coils | Continuous coiling rows with shadow-driven radius, ported from Plotterfun springs. |
+| Circle halftone | Tone-sized circle outlines, ported from Plotterfun halftone. |
+| Square halftone | Tone-sized square outlines, ported from Plotterfun boxes. |
 | Stippling | Irregular dots concentrated in dark regions. Each dot needs a pen lift. |
 
 The image fits proportionally inside the page with at least 5 mm margins. A repeatable seed controls scribbles, tours and dots. The browser samples images to a maximum of 240 pixels on the longest side. Rendering and export use the same paths. Thin-pen output is approximated in SVG at 0.28 mm. The image algorithms generate geometry from tone and contrast, so they cannot reproduce an artist's decisions about facial anatomy or which lines to omit.
 
 Spacing changes density. Increase it for a faster, looser result. Sketches use a bounded segment and distance budget, and all styles enforce an output-point limit. A dense drawing or thousands of pen lifts may take hours on the original bed-lift mechanism. The machine's measured travel still controls which page sizes can be plotted.
 
-The sketch method uses darkest-path selection and residual ink demand as described by [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/pfms.html). Squiggle, spiral and point-tour families are described by [Plotterfun](https://github.com/mitxela/plotterfun) and [SquiggleCam](https://github.com/msurguy/SquiggleCam). The implementations here use Python's standard library.
+The sketch method uses darkest-path selection and residual ink demand as described by [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/pfms.html). Squiggle, spiral and point-tour families are described by [Plotterfun](https://github.com/mitxela/plotterfun) and [SquiggleCam](https://github.com/msurguy/SquiggleCam). The implementations here use Python's standard library. Spring coils, circle halftone and square halftone are Python ports of Plotterfun, revision `faf67d4dadc359a9d5703b0c4e501ea3bbad84d9`. Their MIT license is retained in `third_party/plotterfun-LICENSE.txt`. Boxes is credited to MarkJB and halftone to HomineLudens by the upstream project. The ports adapt pixel coordinates to millimeters and enforce deterministic, bounded output.
 
 ## Quick start
 

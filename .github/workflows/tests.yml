@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Verify Python compiles
-        run: python -m compileall -q app.py photo_slicer.py photo_sketch.py photo_patterns.py tests
+        run: python -m compileall -q app.py photo_slicer.py photo_sketch.py photo_patterns.py photo_plotterfun.py tests
       - name: Parse browser JavaScript
         run: |
           node --check web/app.js

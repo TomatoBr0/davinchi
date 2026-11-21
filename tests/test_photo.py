@@ -10,7 +10,7 @@ class PhotoTests(unittest.TestCase):
                 "spacing_mm": 2}
 
     def test_all_styles_make_valid_bounded_jobs(self):
-        for style in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour"):
+        for style in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour", "springs", "halftone", "boxes"):
             pixels = [0 if x < 6 else 255 for y in range(8) for x in range(12)]
             with self.subTest(style=style):
                 result = slice_photo(self.image(style, pixels))
@@ -21,7 +21,7 @@ class PhotoTests(unittest.TestCase):
                 self.assertIn("<svg", result["svg"])
 
     def test_deterministic_and_white_is_blank(self):
-        for style in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour"):
+        for style in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour", "springs", "halftone", "boxes"):
             with self.subTest(style=style), self.assertRaises(ValueError):
                 slice_photo(self.image(style, [255] * 96))
         self.assertEqual(slice_photo(self.image("scribble")), slice_photo(self.image("scribble")))
@@ -55,6 +55,11 @@ class PhotoTests(unittest.TestCase):
         for path in re.findall(r'<path d="([^"]+)"', result["svg"]):
             coords = [float(x) for x, _ in re.findall(r"[ML]([0-9.]+),([0-9.]+)", path)]
             self.assertFalse(min(coords) < 12 and max(coords) > 28)
+
+    def test_imported_styles_are_distinct_and_repeatable(self):
+        images = [slice_photo(self.image(style))["uno_gcode"] for style in ("springs", "halftone", "boxes")]
+        self.assertEqual(len(set(images)), 3)
+        self.assertEqual(images[0], slice_photo(self.image("springs"))["uno_gcode"])
 
     def test_bad_input(self):
         for patch in ({"width": 1000}, {"pixels": []}, {"style": "bad"},

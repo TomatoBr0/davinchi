@@ -16,7 +16,7 @@ def slice_photo(payload):
     if not isinstance(pixels, list) or len(pixels) != width * height or any(type(p) is not int or not 0 <= p <= 255 for p in pixels):
         raise ValueError("Expected one grayscale byte per pixel")
     style = payload.get("style", "scribble")
-    if style not in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour"):
+    if style not in ("diagonal", "crosshatch", "scribble", "outlines", "stipple", "squiggle", "spiral", "tour", "springs", "halftone", "boxes"):
         raise ValueError("Unknown drawing style")
     page_w = num(payload.get("page_width_mm", 150), "Page width", 20, 300)
     page_h = num(payload.get("page_height_mm", 150), "Page height", 20, 300)
@@ -84,6 +84,10 @@ def slice_photo(payload):
         else:
             paths = squiggle_paths(ink, draw_w, draw_h, spacing)
         for path in paths:
+            add(path)
+    elif style in ("springs", "halftone", "boxes"):
+        from photo_plotterfun import plotterfun_paths
+        for path in plotterfun_paths(style, ink, draw_w, draw_h, spacing, rng, threshold):
             add(path)
     elif style in ("diagonal", "crosshatch"):
         # Walk parallel scanlines. Shadow levels select extra hatch families.

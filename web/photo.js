@@ -3,6 +3,9 @@
   const el = id => document.getElementById(id);
   let raster = null, result = null, generation = 0;
   const styleNotes = {
+    springs: "Overlapping coils expand in the shadows, drawing the picture in spring-like ribbons.",
+    halftone: "Circles grow with darkness to form a photographic halftone.",
+    boxes: "Squares grow with darkness for a geometric, pixel-art texture.",
     scribble: "Long overlapping curves build shadows while traced contours retain facial features.",
     tour: "One continuous path links irregularly scattered points, with more points in dark areas.",
     squiggle: "Each row becomes a flowing wave. Dark areas make tighter, taller waves.",
