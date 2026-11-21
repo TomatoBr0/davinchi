@@ -312,7 +312,7 @@ def make_handler(store):
             if url == "/api/samples":
                 return self._json({"samples": store.all()})
             path = {"/": WEB / "index.html", "/app.js": WEB / "app.js",
-                    "/style.css": WEB / "style.css"}.get(url)
+                    "/style.css": WEB / "style.css", "/photo.js": WEB / "photo.js"}.get(url)
             if path is None or not path.is_file():
                 return self._json({"error": "Not found"}, 404)
             raw = path.read_bytes()
@@ -330,6 +330,9 @@ def make_handler(store):
                 data = self._body()
                 if self.path == "/api/samples":
                     return self._json({"id": store.add(data)}, 201)
+                if self.path == "/api/photo":
+                    from photo_slicer import slice_photo
+                    return self._json(slice_photo(data))
                 if self.path == "/api/compose":
                     return self._json(compose(data, store.all()))
                 return self._json({"error": "Not found"}, 404)
@@ -372,3 +375,4 @@ def serve():
 
 if __name__ == "__main__":
     serve()
+

@@ -30,6 +30,12 @@ Serial Monitor: **115200 baud**. Send `s` for one bounded test (40 slow steps ea
 - Preview/export real **SVG** and **three-axis GRBL-style G-code**, including optional tiny Z variation. Z modulation defaults **off**.
 - No web framework, cloud account, API keys or third-party runtime dependencies.
 
+## Picture slicer
+
+Run `python app.py` and use **Picture to drawing**. Load a JPEG, PNG, WebP or another image supported by your browser. Choose diagonal lines, crosshatching, scribbles, edge sketch or stippling. Adjust page dimensions, spacing, contrast and ink threshold, then generate and inspect the preview. Download SVG for a vector drawing or the Uno job for `send_plot.py`.
+
+The picture is fitted proportionally inside the page with a 5 mm minimum margin. Darker areas get denser marks. The seed makes scribble and dot variants repeatable. Images are sampled to at most 240 pixels on their longest side. Edge sketch follows detected contrast changes with short scanline marks. The generator preserves image orientation, and the machine profile still determines usable travel. Dense jobs may take considerable time, especially dots and scribbles with many bed lifts. Increase spacing to simplify them.
+
 ## Quick start
 
 Requires Python 3.10+.
@@ -86,3 +92,4 @@ docs/validation.md     manual functional test checklist
 ## License
 
 No license is assigned yet. This avoids choosing legal terms for the repository without the owner's decision.
+

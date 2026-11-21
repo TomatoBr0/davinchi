@@ -14,6 +14,33 @@
 </header>
 <main>
   <section class="panel">
+    <div class="heading"><div><h2>Picture to drawing</h2><p>Turn shadows into pen marks. Darker areas receive more ink. Your picture stays on this local computer.</p></div></div>
+    <label>Picture<input id="photo-file" type="file" accept="image/*"></label>
+    <div id="photo-controls" class="fields">
+      <label>Drawing style<select id="photo-style">
+        <option value="diagonal">Diagonal lines</option>
+        <option value="crosshatch">Crosshatching</option>
+        <option value="scribble">Scribbles</option>
+        <option value="outlines">Edge sketch</option>
+        <option value="stipple">Dots / stippling</option>
+      </select></label>
+      <label>Page width, mm<input id="photo-width" type="number" value="150" min="20" max="300"></label>
+      <label>Page height, mm<input id="photo-height" type="number" value="150" min="20" max="300"></label>
+      <label>Mark spacing, mm<input id="photo-spacing" type="number" value="1.2" min=".5" max="5" step=".1"></label>
+      <label>Contrast<input id="photo-contrast" type="number" value="1.4" min=".3" max="3" step=".1"></label>
+      <label>Ink threshold<input id="photo-threshold" type="number" value=".18" min=".02" max=".9" step=".02"></label>
+      <label>Random seed<input id="photo-seed" type="number" value="1" min="0" max="2147483647"></label>
+    </div>
+    <div class="actions">
+      <button id="photo-generate" class="primary" type="button">Generate drawing</button>
+      <button id="photo-svg" class="secondary" type="button" disabled>Download SVG</button>
+      <button id="photo-code" class="secondary" type="button" disabled>Download Uno job</button>
+    </div>
+    <p id="photo-status" class="status" role="status">Choose a picture to begin.</p>
+    <div id="photo-source"></div>
+    <div id="photo-preview" class="preview" aria-label="Picture drawing preview"></div>
+  </section>
+  <section class="panel">
     <div class="heading"><div><h2>1. Capture your handwriting</h2><p>Write naturally with finger, stylus or mouse. Lifting the pointer creates a new stroke.</p></div><span class="pill">Stroke training</span></div>
     <div class="fields">
       <label>Written text<input id="label" maxlength="80" placeholder="a, th, together, etc."></label>
@@ -61,5 +88,7 @@
 </main>
 <footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno plotter controller • ESP32 Wi-Fi bridge optional</footer>
 <script src="/app.js" defer></script>
+<script src="/photo.js" defer></script>
 </body>
 </html>
+
