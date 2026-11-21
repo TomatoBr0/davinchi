@@ -38,11 +38,11 @@ Run `python app.py` and use **Picture to drawing**. Load a JPEG, PNG, WebP or an
 | --- | --- |
 | Wandering ink sketch | Long curved scribbles seek remaining dark areas and build overlapping shadows, with traced contours retaining features. Lifts between disconnected areas. |
 | Squiggle waves | Continuous horizontal rows with taller, tighter waves in dark regions. |
+| Crosshatching | Multiple angles build layers of shadow. |
 | Contour sketch | Thinned gradients joined into feature-following polylines. |
 | Spring coils | Continuous coiling rows with shadow-driven radius, ported from Plotterfun springs. |
 | Circle halftone | Tone-sized circle outlines, ported from Plotterfun halftone. |
 | Square halftone | Tone-sized square outlines, ported from Plotterfun boxes. |
-| Stippling | Irregular dots concentrated in dark regions. Each dot needs a pen lift. |
 
 The image fits proportionally inside the page with at least 5 mm margins. A repeatable seed controls scribbles, tours and dots. The browser samples images to a maximum of 240 pixels on the longest side. Rendering and export use the same paths. Thin-pen output is approximated in SVG at 0.28 mm. The image algorithms generate geometry from tone and contrast, so they cannot reproduce an artist's decisions about facial anatomy or which lines to omit.
 
