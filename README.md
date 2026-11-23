@@ -4,6 +4,10 @@ Turn an XYZprinting Da Vinci 1.0 with a failed motherboard into a handwriting pl
 
 **Start here:** [From recorded handwriting to the Uno](docs/plotting.md). The local composer exports ordered stroke jobs, and the USB sender checks and streams them to the three-axis plotter sketch. Wiring, travel, steps/mm and pen heights still need verification on the real machine.
 
+## Confirmed driver wiring
+
+See the [November 22 user-confirmed wiring table](docs/confirmed-driver-wiring.md) and [driver layout image](docs/confirmed-driver-wiring.svg). These record Caleb’s working test connections, including all sixteen header positions, and supersede older uncertainty about the harness connections below. Current limits and full-machine calibration remain separate checks.
+
 ## Hardware handoff for Arduino development
 
 Read [DAVINCI_HARDWARE_CONTEXT.md](DAVINCI_HARDWARE_CONTEXT.md) first for measured driver connections, corrected bench readings, unresolved pins and current-limit checks, and a disarmed-by-default Uno firmware brief. No motor motion has been verified yet.
