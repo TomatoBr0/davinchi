@@ -111,7 +111,11 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0, anchor='center', pen_down=Fal
             wear = WEAR; nextwear += WEAR_EVERY
         cmds.append(f'J Z{rise:.3f} F100')            # paired return to travel height
     cmds += [f'J X{-pos[0]:.3f} Y{-pos[1]:.3f} F{FEED}', f'J Z{START_Z - LIFT:.3f} F100']  # back to the start spot and height
-    info = dict(strokes=len(chains), moves=len(cmds), draw_cm=round(drawn / 10),
+    travel = sum(math.hypot(*(float(w[1:]) for w in c.split()[1:3])) for c in cmds if ' X' in c)
+    zmm = sum(abs(float(c.split()[1][1:])) for c in cmds if c.split()[1][0] == 'Z')
+    # measured on the bear run: ~0.035 s overhead per command on top of pure travel time
+    eta_min = round((travel / FEED + zmm / 100 + len(cmds) * .035 / 60), 1)
+    info = dict(strokes=len(chains), moves=len(cmds), draw_cm=round(drawn / 10), eta_min=eta_min,
                 size_mm=(round((max(xs) - min(xs)) * k), round((max(ys) - min(ys)) * k)))
     return cmds, info
 
@@ -124,7 +128,7 @@ def main(argv):
     with open(resolve(svg), encoding="utf-8") as f:
         cmds, info = build(f.read(), float(opts.get("fit", 150)), float(opts.get("ang", 0)), float(opts.get("press", 0)),
                            opts.get("anchor", "center"), opts.get("start") == "down", opts.get("wear", "1") != "0")
-    print(info["strokes"], "strokes", info["moves"], "moves", info["draw_cm"], "cm drawn", "size mm", info["size_mm"], file=sys.stderr)
+    print(info["strokes"], "strokes", info["moves"], "moves", info["draw_cm"], "cm drawn", "size mm", info["size_mm"], "ETA about", info["eta_min"], "min", file=sys.stderr)
     out = os.path.join(os.getcwd(), "davinci_cmds.txt")
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(cmds))
