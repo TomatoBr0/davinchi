@@ -10,7 +10,7 @@ Updated as each piece lands. Nothing here has been run on hardware unless it say
 | Sketch-style slicer + self-check match score | First version; tone and auto-tune in progress | tools/sketch_style.py |
 | Worksheet filling (Letter page in 4 placements, phone-photo page tracking) | Built, 57 tests pass, not tried on paper | tools/worksheet.py, docs/worksheet.md |
 | Endstops (optical A/G/C, D9/D10/D11, ES / ESWATCH / G28 homing, off by default) | Built, compiles (50% flash), not uploaded or hardware-tested | firmware/plotter, docs/hardware.md |
-| Nano ESP32 port with Wi-Fi | In progress | firmware/plotter_esp32 |
+| Nano ESP32 port with Wi-Fi (TCP 23, HTTP jog page, same commands) | Built, compiles, not uploaded; no Wi-Fi password in code (set by serial) | firmware/plotter_esp32 |
 | Carl assistant + DaVinci integration (Codex) | In progress, in the Carl repo | Carl repo |
 
 To check: docs/plotting.md says +X moves right; on the printer +X moved left.
