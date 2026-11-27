@@ -70,25 +70,39 @@
   async function slice() {
     if (!raster) { setStatus("Choose a picture first."); return; }
     const button = $("slice");
-    button.disabled = true; $("spinner").hidden = false; setStatus("Slicing…");
+    const sketchMode = $("style").value === "sketch";
+    button.disabled = true; $("spinner").hidden = false;
+    setStatus(sketchMode && $("tune").checked ? "Sketching and tuning… this can take a while." : "Slicing…");
+    showReport(null);
     try {
-      const response = await fetch("/api/photo", {
+      const response = await fetch(sketchMode ? "/api/sketch" : "/api/photo", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({...raster, style: $("style").value,
           page_width_mm: Number($("page-w").value), page_height_mm: Number($("page-h").value),
           spacing_mm: Number($("spacing").value), contrast: Number($("contrast").value),
           threshold: Number($("threshold").value), seed: Number($("seed").value),
-          cleanup: $("cleanup").value, outline_mode: $("outline").value})
+          tune: $("tune").checked, cleanup: $("cleanup").value, outline_mode: $("outline").value})
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Slicing failed");
       setJob(parseGcode(data.uno_gcode), $("style").value);
+      if (sketchMode) showReport(data);
       setStatus(data.stroke_count + " pen strokes. Scrub the job, then download or send it.");
     } catch (error) {
       setStatus(error.message);
     } finally {
       button.disabled = false; $("spinner").hidden = true;
     }
+  }
+  // Sketch check: the source darkness beside the drawn strokes' darkness, with the match score.
+  function showReport(data) {
+    $("sketch-report").hidden = !data;
+    if (!data) return;
+    $("compare").src = data.compare_png || "";
+    $("match").textContent = data.match + "%";
+    const s = data.settings;
+    $("match-note").textContent = (data.tuned ? "Auto-tuned: " : "") +
+      `hatch ${s.hatch}, loose ${s.loose}, threshold ${s.thr}. Left: picture darkness. Right: drawn strokes.`;
   }
   $("slice").addEventListener("click", slice);
 

@@ -225,6 +225,46 @@ def render_uno_gcode(strokes, opt):
     return render_uno_gcode(strokes, opt)
 
 
+def slice_sketch(payload):
+    """Hand-sketch style: grayscale raster -> tools/sketch_style -> centred Uno G-code plus match report."""
+    import base64
+    import numpy as np
+    import cv2
+    from slicer import render_uno_gcode
+    from tools.sketch_style import sketch
+
+    if not isinstance(payload, dict):
+        raise ValueError("Expected an image object")
+    width, height = payload.get("width"), payload.get("height")
+    if type(width) is not int or type(height) is not int or not (2 <= width <= 480 and 2 <= height <= 480):
+        raise ValueError("Image dimensions must be 2 to 480 pixels")
+    pixels = payload.get("pixels")
+    if not isinstance(pixels, list) or len(pixels) != width * height or any(type(p) is not int or not 0 <= p <= 255 for p in pixels):
+        raise ValueError("Expected one grayscale byte per pixel")
+    page_w = num(payload.get("page_width_mm", 150), "Page width", 20, 300)
+    page_h = num(payload.get("page_height_mm", 150), "Page height", 20, 300)
+    seed = payload.get("seed", 1)
+    if type(seed) is not int or not 0 <= seed <= 2147483647:
+        raise ValueError("Seed must be a nonnegative integer")
+    tune = payload.get("tune", False)
+    if type(tune) is not bool:
+        raise ValueError("Tune must be true or false")
+    gray = np.array(pixels, np.uint8).reshape(height, width)
+    result = sketch(gray, tune=tune, size=min(page_w, page_h) - 10, seed=seed)
+    ox, oy = (page_w - result["width_mm"]) / 2, (page_h - result["height_mm"]) / 2
+    strokes = [[(x + ox, y + oy, p) for x, y in pts] for pts, p in result["paths"] if len(pts) > 1]
+    if not strokes:
+        raise ValueError("No drawable marks. Use a picture with darker tones.")
+    options = {"travel_feed_mm_min": 300, "write_feed_mm_min": 300}
+    ok, png = cv2.imencode(".png", result["compare"])
+    return {"svg": render_svg(strokes, page_w, page_h),
+            "uno_gcode": render_uno_gcode(strokes, options),
+            "stroke_count": len(strokes), "point_count": sum(len(s) for s in strokes),
+            "match": round(result["match"], 1), "settings": result["settings"], "tuned": tune,
+            "compare_png": "data:image/png;base64," + base64.b64encode(png.tobytes()).decode("ascii") if ok else None,
+            "machine_ready": False}
+
+
 def compose(payload, library):
     if not isinstance(payload, dict):
         raise ValueError("Expected an object")
@@ -631,6 +671,8 @@ def make_handler(store, link=None):
                 if self.path == "/api/photo":
                     from photo_slicer import slice_photo
                     return self._json(slice_photo(data))
+                if self.path == "/api/sketch":
+                    return self._json(slice_sketch(data))
                 if self.path == "/api/compose":
                     return self._json(compose(data, store.all()))
                 return self._json({"error": "Not found"}, 404)

@@ -24,6 +24,7 @@
       <label>Drawing style
         <select id="style">
           <option value="scribble">Wandering ink sketch</option>
+          <option value="sketch">Hand sketch (shows match check)</option>
           <option value="squiggle">Squiggle waves</option>
           <option value="outlines">Contour sketch</option>
           <option value="springs">Spring coils</option>
@@ -56,11 +57,19 @@
       <label>Contrast<input id="contrast" type="number" value="1.4" min=".3" max="3" step=".1"></label>
       <label>Ink threshold<input id="threshold" type="number" value=".18" min=".02" max=".9" step=".02"></label>
       <label>Random seed<input id="seed" type="number" value="1" min="0" max="2147483647"></label>
+      <label>Sketch auto-tune (slower)<input id="tune" type="checkbox"></label>
     </div>
     <div class="actions">
       <button id="slice" class="primary" type="button"><span id="spinner" class="spinner" hidden></span>Slice</button>
     </div>
     <p id="status" class="status" role="status">Choose a picture to begin.</p>
+    <div id="sketch-report" class="sketch-report" hidden>
+      <img id="compare" alt="Sketch check: left is the picture's darkness, right is the drawn strokes">
+      <div>
+        <p class="match"><span>Match</span> <strong id="match">0%</strong></p>
+        <p id="match-note" class="status"></p>
+      </div>
+    </div>
   </section>
 
   <section id="viewer" class="panel" hidden>
