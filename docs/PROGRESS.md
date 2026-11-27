@@ -13,6 +13,7 @@ Updated as each piece lands. Nothing here has been run on hardware unless it say
 | Nano ESP32 port with Wi-Fi (TCP 23, HTTP jog page, same commands) | Built, compiles, not uploaded; no Wi-Fi password in code (set by serial) | firmware/plotter_esp32 |
 | Recreate slicer (strokes follow the original's lines, density matches its darkness, self-check) | Built, Batman preview 99% shape / 3.4% darkness off, not drawn | tools/recreate.py |
 | Handwriting: upload notebook pages, label letters, read with Claude API, write in your hand | Built, 87 tests pass, needs real photos and pip install anthropic | tools/handwriting.py, web/handwriting.html, docs/handwriting.md |
+| Phone relay (separate Cloudflare Worker: uploads + command queue, token auth, motion needs confirm) + laptop poller | Built, tests pass, not deployed; needs KV + secrets | cloud/relay, tools/relay_client.py |
 | Carl assistant + DaVinci integration (Codex) | In progress, in the Carl repo | Carl repo |
 
 To check: docs/plotting.md says +X moves right; on the printer +X moved left.

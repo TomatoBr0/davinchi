@@ -89,11 +89,11 @@ class LilyPressureTests(unittest.TestCase):
             return [float(c.split("Z-")[1].split()[0]) for c in cmds if c.startswith("J Z-")][1]
         self.assertAlmostEqual(first_down(heavy) - first_down(light), 1.5, places=3)
 
-    def test_chain_joins_only_similar_pressure(self):
-        a, b = ([(0, 0), (5, 0)], 0.5), ([(5.5, 0), (9, 0)], 0.5)
-        c = ([(5.2, 0), (9, 0)], 0.9)                 # same gap as b, but pressure differs by 0.4
+    def test_chain_joins_nearby_strokes_like_a_scribble(self):
+        a, b = ([(0, 0), (5, 0)], 0.5), ([(5.5, 0), (9, 0)], 0.9)   # close: drawn through, no lift
+        far = ([(20, 0), (25, 0)], 0.5)                             # beyond JOIN: lifts
         self.assertEqual(len(lily_run.chain([a, b])), 1)
-        self.assertEqual(len(lily_run.chain([a, c])), 2)
+        self.assertEqual(len(lily_run.chain([a, far])), 2)
 
     def test_svg_resolves_from_script_dir_and_writes_to_cwd(self):
         old = os.getcwd()

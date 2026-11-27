@@ -1,0 +1,16 @@
+{
+  // Separate Worker for the laptop plotter relay. Does NOT touch the existing "da-vinci" Worker.
+  "name": "davinchi-relay",
+  "main": "worker.js",
+  "compatibility_date": "2026-01-01",
+  // REQUIRED BINDING (not created by this repo): create a KV namespace yourself, e.g.
+  //   npx wrangler kv namespace create RELAY_KV
+  // then paste the returned id below. Zero KV namespaces exist on the account today.
+  "kv_namespaces": [
+    { "binding": "RELAY_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  ]
+  // SECRETS (set with `wrangler secret put`, never commit values):
+  //   RELAY_TOKEN  - phone bearer token (long random string)
+  //   AGENT_TOKEN  - laptop bearer token, read from env DAVINCHI_AGENT_TOKEN by relay_client.py
+  // R2 is not enabled on this account (403 "enable R2 in the Dashboard"), so photos live in KV.
+}
