@@ -15,11 +15,28 @@ SIZE, PEN = float(args.get('size', 170)), float(args.get('pen', .35))
 GAIN, rng = float(args.get('gain', 1.0)), random.Random(int(args.get('seed', 1)))
 
 g = cv2.imread(sys.argv[1], cv2.IMREAD_GRAYSCALE).astype(np.float32)
+if 'blank' in args:  # blank=x0,y0,x1,y1;... areas to leave empty (fractions of the image)
+    h0, w0 = g.shape; bg = float(np.percentile(g, 90))
+    for r in args['blank'].split(';'):
+        x0, y0, x1, y1 = map(float, r.split(',')); g[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)] = bg
+if 'crop' in args:  # crop=x0,y0,x1,y1 as fractions of the image
+    x0, y0, x1, y1 = map(float, args['crop'].split(',')); h0, w0 = g.shape
+    g = g[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)]
+PENCIL = args.get('mode', 'pen') == 'pencil'  # pencil: light areas get many faint strokes you can smudge
+ink_of = (lambda p: .2 + .8 * p) if PENCIL else (lambda p: .55 + .45 * p)   # how dark one stroke is at pressure p
 sc = 900 / max(g.shape); g = cv2.resize(g, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
 H, W = g.shape; S = SIZE / max(H, W); pw = PEN / S            # mm/px, pencil width in px
 paper = cv2.GaussianBlur(cv2.dilate(g, np.ones((121, 121), np.uint8)), (0, 0), 40)  # local paper brightness (handles shading)
 ink = np.percentile(g, 2)
 D = np.clip((paper - g) / np.maximum(1, paper - ink) - .06, 0, 1) / .94           # 0 paper .. 1 solid ink
+if args.get('subject') == '1':  # keep only the main subject (largest dark shape), drop text and marks around it
+    blob = (cv2.GaussianBlur(D, (0, 0), 6) > .15).astype(np.uint8)
+    blob = cv2.morphologyEx(blob, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(blob, 8)
+    if n > 1:
+        keep = (lab == 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))).astype(np.uint8)
+        keep = cv2.dilate(keep, np.ones((9, 9), np.uint8))
+        D = D * keep
 Ds = cv2.GaussianBlur(D, (0, 0), max(1.0, pw))                 # darkness as the pencil sees it
 
 # stroke direction = along the original's lines (perpendicular to the brightness gradient)
@@ -30,7 +47,8 @@ coh = np.sqrt((J[0] - J[2]) ** 2 + 4 * J[1] ** 2) / (J[0] + J[2] + 1e-6)  # 0 = 
 
 def sep(x, y):  # spacing needed here to reproduce the darkness
     d = min(1.0, Ds[int(y), int(x)] * GAIN)
-    return pw / d if d > .04 else None
+    if d <= .04: return None
+    return pw * ink_of(d) / d if PENCIL else pw / d
 
 CELL = 2.0; occ = {}                                           # spatial hash of placed points
 def free(x, y, r):
@@ -87,7 +105,7 @@ for d_lo in (.6, .3, .12, .04):                                # darkest areas f
 # self-check: draw it like a pencil and compare darkness with the original
 canvas = np.zeros((H, W), np.float32)
 for pts, p in strokes:
-    cv2.polylines(canvas, [np.int32(np.round(pts))], False, .55 + .45 * p, max(1, int(round(pw))), cv2.LINE_AA)
+    cv2.polylines(canvas, [np.int32(np.round(pts))], False, ink_of(p), max(1, int(round(pw))), cv2.LINE_AA)
 a, b = cv2.GaussianBlur(D, (0, 0), 4), cv2.GaussianBlur(np.clip(canvas, 0, 1), (0, 0), 4)
 err = float(np.mean(np.abs(a - b))); corr = float(np.corrcoef(a.ravel(), b.ravel())[0, 1])
 cv2.imwrite(sys.argv[2].rsplit('.', 1)[0] + '_compare.png', np.hstack([255 * (1 - D), 255 * (1 - np.clip(canvas, 0, 1))]).astype(np.uint8))
