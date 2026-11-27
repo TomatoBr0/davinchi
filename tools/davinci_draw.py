@@ -62,7 +62,7 @@ def chain(paths):
     return chains
 
 
-def build(svg_text, fit=150.0, ang=0.0, press=0.0):
+def build(svg_text, fit=150.0, ang=0.0, press=0.0, anchor='center', pen_down=False, wear_on=True):
     """Return (commands, info) for an SVG string. press = extra pen-down height (mm) at data-p 1."""
     if press < 0:
         raise ValueError("press must be 0 or more")
@@ -74,7 +74,14 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0):
     rot = lambda x, y: (x * ca - y * sa, x * sa + y * ca)
     rp = [rot(a - cx, b - cy) for q, _ in chains for a, b in q]
     k = fit / max(max(abs(a) for a, b in rp), max(abs(b) for a, b in rp)) / 2  # rotated drawing fits +-fit/2
-    m = lambda p: (lambda x, y: (-x * k, -y * k))(*rot(p[0] - cx, p[1] - cy))  # svg right -> -X, svg down -> -Y
+    m0 = lambda p: (lambda x, y: (-x * k, -y * k))(*rot(p[0] - cx, p[1] - cy))  # svg right -> -X, svg down -> -Y
+    # anchor: where the head starts. center, or a corner of the drawing (f/b = front/back, l/r = user's left/right)
+    pts = [m0(p) for q, _ in chains for p in q]
+    ox = oy = 0.0
+    if anchor != 'center':
+        ox = -max(a for a, b in pts) if 'l' in anchor else -min(a for a, b in pts)   # +X is the user's left
+        oy = -min(b for a, b in pts) if 'f' in anchor else -max(b for a, b in pts)   # +Y is back
+    m = lambda p: (lambda x, y: (x + ox, y + oy))(*m0(p))
 
     cmds, pos, drawn, nextwear, wear = [], (0.0, 0.0), 0.0, WEAR_EVERY, 0.0
     def go(p, f):
@@ -84,7 +91,8 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0):
             cmds.append(f'J X{dx:.3f} Y{dy:.3f} F{f}'); pos = p
         return math.hypot(dx, dy)
 
-    cmds.append(f'J Z-{5 - LIFT:.3f} F100')          # start (5 mm below writing) -> travel (LIFT below writing)
+    START_Z = 0.0 if pen_down else 5.0                # pen_down: the pen starts touching the paper
+    cmds.append(f'J Z{LIFT - START_Z:.3f} F100')      # start -> travel (LIFT below writing)
     for path, pr in chains:
         if len(path) < 2:
             continue
@@ -95,10 +103,10 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0):
             if math.dist(m(p), pos) < 0.6 and p is not path[-1]:
                 continue
             drawn += go(m(p), FEED)
-        if drawn >= nextwear:
+        if wear_on and drawn >= nextwear:
             wear = WEAR; nextwear += WEAR_EVERY
         cmds.append(f'J Z{rise:.3f} F100')            # paired return to travel height
-    cmds += [f'J X{-pos[0]:.3f} Y{-pos[1]:.3f} F{FEED}', f'J Z{5 - LIFT:.3f} F100']
+    cmds += [f'J X{-pos[0]:.3f} Y{-pos[1]:.3f} F{FEED}', f'J Z{START_Z - LIFT:.3f} F100']  # back to the start spot and height
     info = dict(strokes=len(chains), moves=len(cmds), draw_cm=round(drawn / 10),
                 size_mm=(round((max(xs) - min(xs)) * k), round((max(ys) - min(ys)) * k)))
     return cmds, info
@@ -108,9 +116,10 @@ def main(argv):
     opts = dict(a.split("=", 1) for a in argv[1:] if "=" in a)
     svg = next((a for a in argv[1:] if a.endswith(".svg")), None)
     if not svg:
-        sys.exit("usage: davinci_draw.py drawing.svg [fit=150] [ang=0] [press=0] [feed=600] [run]")
+        sys.exit("usage: davinci_draw.py drawing.svg [fit=150] [ang=0] [press=0] [feed=600] [anchor=center|fl|fr|bl|br] [start=down] [wear=0] [run]")
     with open(resolve(svg), encoding="utf-8") as f:
-        cmds, info = build(f.read(), float(opts.get("fit", 150)), float(opts.get("ang", 0)), float(opts.get("press", 0)))
+        cmds, info = build(f.read(), float(opts.get("fit", 150)), float(opts.get("ang", 0)), float(opts.get("press", 0)),
+                           opts.get("anchor", "center"), opts.get("start") == "down", opts.get("wear", "1") != "0")
     print(info["strokes"], "strokes", info["moves"], "moves", info["draw_cm"], "cm drawn", "size mm", info["size_mm"], file=sys.stderr)
     out = os.path.join(os.getcwd(), "davinci_cmds.txt")
     with open(out, "w", encoding="utf-8") as f:
