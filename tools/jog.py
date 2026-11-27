@@ -15,7 +15,14 @@ for c in sys.argv[1:]:
 s = serial.Serial('COM6', 115200, timeout=60); time.sleep(2.5); s.reset_input_buffer()
 def cmd(c):
     s.write((c + '\n').encode()); r = s.readline().decode().strip(); print(c, '->', r); return r
-for c in ['$XMM='+os.environ.get('XMM','5'), '$YMM='+os.environ.get('YMM','5'), '$ZMM='+os.environ.get('ZMM','160'), 'M17'] + sys.argv[1:]:
+PF = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'progress.txt')
+START = int(os.environ.get('START', '0'))  # resume: skip commands already done
+job = sys.argv[1:]
+for c in ['$XMM='+os.environ.get('XMM','5'), '$YMM='+os.environ.get('YMM','5'), '$ZMM='+os.environ.get('ZMM','160'), 'M17']:
     cmd(c)
+for i, c in enumerate(job):
+    if i < START: continue
+    cmd(c)
+    open(PF, 'w').write(f'{i + 1}\n')  # commands done; after a stop, resume with START=<this number>
 cmd('M18')
 open(ZF, 'w').write(str(z)); print('Z from bottom:', z)

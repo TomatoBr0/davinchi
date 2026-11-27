@@ -12,7 +12,7 @@ import math, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIFT, WEAR_EVERY, WEAR = 2.0, 2000.0, 0.1
-JOIN, SAME_PRESS = 2.0, .15   # join gaps under JOIN mm, only between strokes whose pressure differs by < SAME_PRESS
+JOIN, SAME_PRESS = 6.0, 1.0   # join gaps under JOIN mm, only between strokes whose pressure differs by < SAME_PRESS
 PATH_RE = re.compile(r'<path\b([^>]*)>')
 ATTR_RE = re.compile(r'([\w-]+)="([^"]*)"')
 POINT_RE = re.compile(r'(-?[\d.]+),(-?[\d.]+)')
