@@ -24,6 +24,7 @@ WEB = ROOT / "web"
 DB_PATH = Path(os.environ.get("DAVINCHI_DB", str(ROOT / "data" / "samples.sqlite3")))
 MAX_BODY = 1_000_000
 MAX_JOB_BODY = 8_000_000
+MAX_UPLOAD = 25_000_000  # handwriting photos (base64 JSON)
 CALIBRATION_FILES = {"/calibration_test.nc": ROOT / "tools" / "calibration_test.nc",
                      "/calibration_sheet.pdf": ROOT / "docs" / "calibration" / "calibration_sheet.pdf"}
 MIME = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
@@ -589,8 +590,10 @@ class MachineLink:
         return self.info()
 
 
-def make_handler(store, link=None):
+def make_handler(store, link=None, hand=None):
+    from tools.handwriting import Handwriting, OcrUnavailable
     link = link or MachineLink()
+    hand = hand or Handwriting(ROOT / "data" / "handwriting")
 
     class Handler(BaseHTTPRequestHandler):
         def _json(self, obj, status=200):
@@ -637,8 +640,30 @@ def make_handler(store, link=None):
                 return self._json(link.stop())
             return self._json({"error": "Not found"}, 404)
 
+        def _hand_get(self, url):
+            if url == "/api/handwriting/samples":
+                return self._json({"samples": hand.samples()})
+            m = re.fullmatch(r"/api/handwriting/sample/(\d+)(/page\.png)?", url)
+            if not m:
+                return self._json({"error": "Not found"}, 404)
+            sid = int(m[1])
+            if m[2]:
+                raw = hand.page_png(sid)
+                if raw is None:
+                    return self._json({"error": "Sample not found"}, 404)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return self.wfile.write(raw)
+            info = hand.detail(sid)
+            return self._json(info) if info else self._json({"error": "Sample not found"}, 404)
+
         def do_GET(self):
             url = urlparse(self.path).path
+            if url.startswith("/api/handwriting/"):
+                return self._hand_get(url)
             if url == "/api/samples":
                 return self._json({"samples": store.all()})
             if url == "/api/serial/ports":
@@ -648,6 +673,7 @@ def make_handler(store, link=None):
             path = {"/": WEB / "index.html", "/app.js": WEB / "app.js", "/machine.js": WEB / "machine.js",
                     "/slicer.html": WEB / "slicer.html", "/slicer.js": WEB / "slicer.js", "/slicer.css": WEB / "slicer.css",
                     "/style.css": WEB / "style.css", "/photo.js": WEB / "photo.js",
+                    "/handwriting.html": WEB / "handwriting.html", "/handwriting.js": WEB / "handwriting.js",
                     **CALIBRATION_FILES}.get(url)
             if path is None or not path.is_file():
                 return self._json({"error": "Not found"}, 404)
@@ -665,6 +691,15 @@ def make_handler(store, link=None):
             try:
                 if self.path.startswith("/api/serial/"):
                     return self._serial_post(self.path.removeprefix("/api/serial/"))
+                if self.path.startswith("/api/handwriting/"):
+                    action = self.path.removeprefix("/api/handwriting/")
+                    if action == "upload":  # phone photos run to several MB
+                        return self._json(hand.upload(self._body(MAX_UPLOAD)), 201)
+                    handlers = {"transcribe": hand.transcribe, "label": hand.label,
+                                "read": hand.read, "render": hand.render}
+                    if action not in handlers:
+                        return self._json({"error": "Not found"}, 404)
+                    return self._json(handlers[action](self._body()))
                 data = self._body()
                 if self.path == "/api/samples":
                     return self._json({"id": store.add(data)}, 201)
@@ -678,6 +713,8 @@ def make_handler(store, link=None):
                 return self._json({"error": "Not found"}, 404)
             except MachineError as exc:
                 return self._json({"error": str(exc)}, exc.status)
+            except OcrUnavailable as exc:
+                return self._json({"error": str(exc)}, 503)
             except (ValueError, TypeError) as exc:
                 return self._json({"error": str(exc)}, 400)
 
