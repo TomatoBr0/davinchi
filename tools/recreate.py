@@ -17,7 +17,7 @@ GAIN, rng = float(args.get('gain', 1.0)), random.Random(int(args.get('seed', 1))
 g = cv2.imread(sys.argv[1], cv2.IMREAD_GRAYSCALE).astype(np.float32)
 sc = 900 / max(g.shape); g = cv2.resize(g, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
 H, W = g.shape; S = SIZE / max(H, W); pw = PEN / S            # mm/px, pencil width in px
-paper = cv2.GaussianBlur(cv2.dilate(g, np.ones((41, 41), np.uint8)), (0, 0), 20)  # local paper brightness (handles shading)
+paper = cv2.GaussianBlur(cv2.dilate(g, np.ones((121, 121), np.uint8)), (0, 0), 40)  # local paper brightness (handles shading)
 ink = np.percentile(g, 2)
 D = np.clip((paper - g) / np.maximum(1, paper - ink) - .06, 0, 1) / .94           # 0 paper .. 1 solid ink
 Ds = cv2.GaussianBlur(D, (0, 0), max(1.0, pw))                 # darkness as the pencil sees it
@@ -43,12 +43,12 @@ def free(x, y, r):
 def mark(pts):
     for x, y in pts: occ.setdefault((int(x / CELL), int(y / CELL)), []).append((x, y))
 
-def trace(x0, y0, sgn, maxlen):
+def trace(x0, y0, sgn, maxlen, r0):
     out, x, y, a_prev = [], x0, y0, None
     for _ in range(int(maxlen)):
         if not (1 <= x < W - 1 and 1 <= y < H - 1): break
         r = sep(x, y)
-        if r is None or not free(x, y, r * .8): break
+        if r is None or not free(x, y, min(r, r0) * .6): break  # keep going until it really meets a neighbour
         a = theta[int(y), int(x)] if coh[int(y), int(x)] > .15 else (a_prev if a_prev is not None else math.radians(60))
         if a_prev is not None and math.cos(a - a_prev) < 0: a += math.pi
         if a_prev is None and sgn < 0: a += math.pi
@@ -57,6 +57,18 @@ def trace(x0, y0, sgn, maxlen):
     return out
 
 strokes = []
+# 1) ink shapes thinner than a pencil sweep (eyelashes, outlines): fill them exactly with nested outlines
+M = (D > .55).astype(np.uint8)
+k = max(3, int(round(3 * pw)) | 1)
+thin = M & (1 - cv2.morphologyEx(M, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))))
+thin = cv2.dilate(thin, np.ones((3, 3), np.uint8)) & M
+lay, ek = thin.copy(), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(1, int(round(pw))) * 2 + 1,) * 2)
+while lay.any():
+    for c in cv2.findContours(lay, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)[0]:
+        if len(c) * S >= .8:
+            pts = [(float(x), float(y)) for x, y in c[:, 0]]; pts.append(pts[0]); mark(pts); strokes.append((pts, 1.0))
+    lay = cv2.erode(lay, ek)
+# 2) shading: strokes along the original's lines, packed to match its darkness
 for d_lo in (.6, .3, .12, .04):                                # darkest areas first, then fade out
     seeds = [(x + rng.random(), y + rng.random()) for y in range(1, H - 1, 2) for x in range(1, W - 1, 2)
              if d_lo <= Ds[y, x] * GAIN < (d_lo * 2 if d_lo < .6 else 9)]
@@ -65,7 +77,7 @@ for d_lo in (.6, .3, .12, .04):                                # darkest areas f
         r = sep(x, y)
         if r is None or not free(x, y, r): continue
         maxlen = rng.uniform(6, 16) / S                         # strokes ~6-16 mm like hand hatching
-        b = trace(x, y, -1, maxlen / 2)[::-1]; f = trace(x, y, 1, maxlen / 2)
+        b = trace(x, y, -1, maxlen / 2, r)[::-1]; f = trace(x, y, 1, maxlen / 2, r)
         pts = b + f[1:]
         if len(pts) * S < 1.0: continue
         mark(pts)
