@@ -8,7 +8,7 @@ Start with the [single-motor bench test](../firmware/DaVinci_One_Motor_Test/READ
 
 To use your existing phone samples, download the dataset ZIP from the Da Vinci capture site and run `python import_phone_export.py export.zip --db data/samples.sqlite3`. Reimporting the same export skips previously imported IDs. Traces and recorded strokes retain their lift boundaries.
 
-Run `python app.py`, open http://127.0.0.1:8765, save some handwritten letter or word samples, then compose and preview text using those labels. Download the Uno job. The SVG preview shows the page orientation. The GRBL preview uses a different dialect. For the first test, use the bundled 5 mm square instead.
+Run `python app.py`, open http://127.0.0.1:8775 (Carl owns 8765; use `--port` if 8775 is busy), save some handwritten letter or word samples, then compose and preview text using those labels. Download the Uno job. The SVG preview shows the page orientation. The GRBL preview uses a different dialect. For the first test, use the bundled 5 mm square instead.
 
     python send_plot.py examples/first-square.dvc
 

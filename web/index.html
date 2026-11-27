@@ -10,9 +10,130 @@
 <header>
   <p class="eyebrow">DA VINCI 1.0 • HANDWRITING PLOTTER</p>
   <h1>Handwriting Lab</h1>
-  <p>Record actual strokes and pen lifts, build a dictionary of handwriting variations, and compose new writing with a preview. No machine connection is active.</p>
+  <p>Connect the Uno, calibrate it, then stream drawings with pause, stop and live status. Preview-only exports still work without a machine.</p>
 </header>
-<main>
+
+<main id="machine-top">
+  <section class="panel">
+    <div class="heading"><div><h2>Machine connection</h2><p id="conn-state">Not connected.</p></div><span class="pill">USB 115200 baud</span></div>
+    <div class="fields conn">
+      <label>Transport<select id="transport">
+        <option value="browser">This browser (USB)</option>
+        <option value="server">Server (remote)</option>
+      </select></label>
+      <label id="port-label" hidden>Port on the server computer<select id="server-port"></select></label>
+    </div>
+    <p id="webserial-note" class="warning" hidden>Web Serial needs Chrome or Edge on desktop. From a phone or other browser, choose Server (remote) and open this page from the computer that has the Uno plugged in.</p>
+    <div class="actions">
+      <button id="connect" class="primary" type="button">Connect</button>
+      <button id="disconnect" class="secondary" type="button" disabled>Disconnect</button>
+      <button id="ports-refresh" class="secondary" type="button" hidden>Refresh ports</button>
+      <button id="abort" class="danger" type="button" title="Sends ! : disarms the motors and clears the origin">Emergency abort (!)</button>
+    </div>
+    <form id="cmd-form" class="cmd">
+      <input id="cmd" placeholder="Manual command, e.g. M114 or M115" autocomplete="off" aria-label="Manual command">
+      <button class="secondary" type="submit">Send</button>
+    </form>
+    <pre id="console" class="console" aria-label="Serial console live log"></pre>
+    <p id="machine-msg" class="status" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>Status</h2><p>Polled every 2 seconds while idle. Lights mirror the Uno's LEDs.</p></div></div>
+    <div class="leds">
+      <span class="led" id="led-ready"><i></i>Ready</span>
+      <span class="led" id="led-busy"><i></i>Busy</span>
+      <span class="led" id="led-alarm"><i></i>Alarm</span>
+      <span class="led" id="led-cal"><i></i>Uncalibrated</span>
+    </div>
+    <pre id="status-text" class="facts">Connect to see position, limits and calibration.</pre>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>Job</h2><p>Streams one line at a time and waits for ok. Start needs a connection and the origin (M210).</p></div></div>
+    <p id="job-name">No job loaded. Compose a handwriting or make a photo drawing first.</p>
+    <progress id="job-progress" max="1" value="0" aria-label="Job progress"></progress>
+    <p id="job-text" class="status"></p>
+    <div class="actions">
+      <button id="job-start" class="primary" type="button" disabled>Start job</button>
+      <button id="job-pause" class="secondary" type="button" disabled>Pause</button>
+      <button id="job-resume" class="secondary" type="button" disabled>Resume</button>
+      <button id="job-stop" class="danger" type="button" disabled>Stop (pen up)</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" type="button" role="tab" data-tab="calibrate" aria-selected="true">1. Calibrate</button>
+  <button class="tab" type="button" role="tab" data-tab="make" aria-selected="false">2. Make drawings</button>
+  <button class="tab" type="button" role="tab" data-tab="control" aria-selected="false">3. Slice and jog</button>
+</nav>
+<div id="cal-banner" class="banner" hidden>Not calibrated yet. Start with the Calibrate tab: the plotter must know its travel and steps/mm before it draws.</div>
+
+<main id="pane-calibrate" class="pane" hidden>
+  <section class="panel">
+    <div class="heading"><div><h2>Calibration wizard</h2><p>Do the five steps in order after every power-up. Use measured values only. Arrow keys jog when this tab is open: Left/Right X, Up/Down Y, PageUp/PageDown Z.</p></div></div>
+    <p class="hint">Printable sheet: <a href="/calibration_sheet.pdf" target="_blank" rel="noopener">calibration_sheet.pdf</a>. Print at 100% / actual size, not fit-to-page.</p>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>1. Enable motors</h2><p>Sends steps/mm, Z travel and pen heights while disarmed, then M17 enables the drivers. Bake-in values are 5, 5 and 160 steps/mm; if a 1 mm jog moves much further than 1 mm, stop and lower it. Start with 0.1 mm jogs.</p></div><span class="pill" id="done-1">Pending</span></div>
+    <div class="fields">
+      <label>X steps/mm<input id="x-steps" type="number" step="0.1" min="0.1" max="2000" value="5"></label>
+      <label>Y steps/mm<input id="y-steps" type="number" step="0.1" min="0.1" max="2000" value="5"></label>
+      <label>Z steps/mm<input id="z-steps" type="number" step="0.1" min="0.1" max="2000" value="160"></label>
+      <label>Z travel max, mm<input id="z-max" type="number" step="0.1" min="0.1"></label>
+      <label>Pen-up Z, mm<input id="pen-up" type="number" step="0.1"></label>
+      <label>Pen-down Z, mm<input id="pen-down" type="number" step="0.1"></label>
+    </div>
+    <div class="actions"><button id="step-enable" class="primary" type="button" disabled>Send profile and enable (M17)</button></div>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>2. Jog to the bottom-left corner, set origin</h2><p>Jogging ignores travel limits, so watch the carriage. Then press Set origin (M210).</p></div><span class="pill" id="done-2">Pending</span></div>
+    <div class="jog">
+      <label>Step, mm<select id="jog-step">
+        <option value="0.1">0.1</option><option value="1" selected>1</option>
+        <option value="10">10</option><option value="50">50</option>
+      </select></label>
+      <div class="jog-pad" aria-label="Jog pad">
+        <span></span><button class="secondary" type="button" data-jog="Y" data-dir="1" disabled>Y+</button><span></span>
+        <button class="secondary" type="button" data-jog="X" data-dir="-1" disabled>X-</button>
+        <span class="centre">XY</span>
+        <button class="secondary" type="button" data-jog="X" data-dir="1" disabled>X+</button>
+        <span></span><button class="secondary" type="button" data-jog="Y" data-dir="-1" disabled>Y-</button><span></span>
+      </div>
+      <div class="jog-z">
+        <button class="secondary" type="button" data-jog="Z" data-dir="1" disabled>Z+ (PageUp)</button>
+        <button class="secondary" type="button" data-jog="Z" data-dir="-1" disabled>Z- (PageDown)</button>
+      </div>
+    </div>
+    <div class="actions"><button id="set-origin" class="primary" type="button" disabled>Set origin here (M210)</button></div>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>3. Jog to the far corner, save max</h2><p>Move to the top-right travel corner of the bed, then save it (M211). This also marks the machine calibrated.</p></div><span class="pill" id="done-3">Pending</span></div>
+    <div class="actions"><button id="save-max" class="primary" type="button" disabled>Save max corner (M211)</button></div>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>4. Draw the test square</h2><p>Load a dark pen at the pen-down height. The 100 mm square and crosshair start at the origin you set. Let the ink dry before measuring.</p></div></div>
+    <div class="actions"><button id="draw-test" class="primary" type="button" disabled>Draw test square</button></div>
+  </section>
+
+  <section class="panel">
+    <div class="heading"><div><h2>5. Enter the measured size</h2><p>Measure the drawn square with a ruler. New steps/mm = old x 100 / measured. Applying disarms the motors and clears the origin (M18, then M92).</p></div></div>
+    <div class="fields">
+      <label>Measured X, mm<input id="meas-x" type="number" step="0.1" min="0.1"></label>
+      <label>Measured Y, mm<input id="meas-y" type="number" step="0.1" min="0.1"></label>
+      <label>New X steps/mm<output id="new-x">-</output></label>
+      <label>New Y steps/mm<output id="new-y">-</output></label>
+    </div>
+    <div class="actions"><button id="apply-steps" class="primary" type="button" disabled>Apply steps/mm (M92)</button></div>
+  </section>
+</main>
+
+<main id="pane-make" class="pane" hidden>
   <section class="panel">
     <div class="heading"><div><h2>Picture to drawing</h2><p>Turn shadows into pen marks. Darker areas receive more ink. Your picture stays on this local computer.</p></div></div>
     <label>Picture<input id="photo-file" type="file" accept="image/*"></label>
@@ -32,6 +153,16 @@
       <label>Contrast<input id="photo-contrast" type="number" value="1.4" min=".3" max="3" step=".1"></label>
       <label>Ink threshold<input id="photo-threshold" type="number" value=".18" min=".02" max=".9" step=".02"></label>
       <label>Random seed<input id="photo-seed" type="number" value="1" min="0" max="2147483647"></label>
+      <label>Outline mode<select id="photo-outline-mode">
+        <option value="edge" selected>Edge contours (default)</option>
+        <option value="centerline">Centerlines (experimental)</option>
+      </select></label>
+      <label>Cleanup<select id="photo-cleanup">
+        <option value="off">Off</option>
+        <option value="low">Low</option>
+        <option value="med" selected>Medium</option>
+        <option value="high">High</option>
+      </select></label>
     </div>
     <p id="photo-style-note">Long overlapping curves build shadows while traced contours retain facial features.</p>
     <div class="actions">
@@ -65,7 +196,7 @@
     <div id="library" class="library"><p>No samples yet.</p></div>
   </section>
   <section class="panel">
-    <div class="heading"><div><h2>3. Compose</h2><p>Longer matching samples and context influence variation selection. Export SVG and review-only G-code.</p></div><span class="pill">Preview only</span></div>
+    <div class="heading"><div><h2>3. Compose</h2><p>Longer matching samples and context influence variation selection. Export SVG and review-only G-code, or load the Uno job into the Job panel.</p></div><span class="pill">Preview only until you press Start</span></div>
     <label>Text<textarea id="text" rows="4" placeholder="Write something with samples you've saved."></textarea></label>
     <div class="fields settings">
       <label>Random seed<input id="seed" type="number" value="1" min="0" max="2147483647"></label>
@@ -89,9 +220,45 @@
     <div class="preview" id="preview" aria-label="SVG handwriting preview"></div>
   </section>
 </main>
-<footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno plotter controller • ESP32 Wi-Fi bridge optional</footer>
+<footer>Local prototype • Original Da Vinci mechanics • Elegoo Uno plotter controller • Phone control: Server (remote) over LAN</footer>
+<main id="pane-control" class="pane" hidden>
+  <section class="panel">
+    <div class="heading"><div><h2>Jog and pen</h2><p>Set the origin (M210) at the centre of the travel with the pen on the paper. X and Y stop at 90 mm either side of it. Z+ is down and Z=0 is the bottom stop: no move goes above 0.</p></div></div>
+    <div class="jog">
+      <label>Step, mm<select id="ctl-step">
+        <option value="0.1">0.1</option><option value="1" selected>1</option>
+        <option value="5">5</option><option value="10">10</option>
+      </select></label>
+      <div class="jog-pad" aria-label="Control jog pad">
+        <span></span><button class="secondary" type="button" data-ctl="Y" data-dir="1" disabled>Y+ (back)</button><span></span>
+        <button class="secondary" type="button" data-ctl="X" data-dir="1" disabled>X+ (left)</button>
+        <span class="centre">XY</span>
+        <button class="secondary" type="button" data-ctl="X" data-dir="-1" disabled>X- (right)</button>
+        <span></span><button class="secondary" type="button" data-ctl="Y" data-dir="-1" disabled>Y- (front)</button><span></span>
+      </div>
+      <div class="jog-z">
+        <button class="secondary" type="button" data-ctl="Z" data-dir="1" disabled>Z+ (down)</button>
+        <button class="secondary" type="button" data-ctl="Z" data-dir="-1" disabled>Z- (up)</button>
+      </div>
+    </div>
+    <pre id="ctl-pos" class="facts">Connect to see position.</pre>
+    <label>Pen lift, mm<input id="ctl-lift" type="number" value="2" min=".1" max="10" step=".1"></label>
+    <div class="actions">
+      <button id="ctl-pen-up" class="secondary" type="button" disabled>Pen up</button>
+      <button id="ctl-pen-down" class="secondary" type="button" disabled>Pen down (bottom stop)</button>
+      <button id="ctl-motors-on" class="primary" type="button" disabled>Enable motors</button>
+      <button id="ctl-motors-off" class="danger" type="button" disabled>Disable motors (M18)</button>
+    </div>
+    <p class="hint">Enabling sends $XMM=5 $YMM=5 $ZMM=160 while disarmed, then M17. Disabling clears the origin.</p>
+  </section>
+  <section class="panel">
+    <div class="heading"><div><h2>Slice a picture</h2><p>Upload a picture, pick a style, slice it and step through the pen path. Send job loads it into the Job panel above; press Start there.</p></div></div>
+    <iframe id="slicer-frame" src="/slicer.html" title="Picture slicer" style="width:100%;height:90vh;min-height:640px;border:0"></iframe>
+  </section>
+</main>
+
 <script src="/app.js" defer></script>
 <script src="/photo.js" defer></script>
+<script src="/machine.js" defer></script>
 </body>
 </html>
-

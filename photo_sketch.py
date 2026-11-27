@@ -126,9 +126,26 @@ def scribble_paths(tones, width, height, draw_w, draw_h, spacing, rng, threshold
             segment_count += 1
 
 
-def edge_paths(tones, width, height, draw_w, draw_h, threshold):
-    """Trace thinned local gradient edges into polylines."""
-    sx, sy = draw_w / (width - 1), draw_h / (height - 1)
+def _morph(pixels, width, height, grow):
+    """3x3 dilation (grow) or erosion over a set of pixel indices."""
+    out = set()
+    if grow:
+        for i in pixels:
+            x, y = i % width, i // width
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    out.add(ny * width + nx)
+    else:
+        for i in pixels:
+            x, y = i % width, i // width
+            if 1 <= x < width - 1 and 1 <= y < height - 1 and all(
+                    i + dy * width + dx in pixels for dy in (-1, 0, 1) for dx in (-1, 0, 1)):
+                out.add(i)
+    return out
+
+
+def _band(tones, width, height, threshold, morph):
+    """Gradient magnitude/angle per pixel and the set of pixels inside the ink band."""
     gradient = [0.0] * len(tones)
     angles = [0.0] * len(tones)
     for y in range(1, height - 1):
@@ -138,19 +155,98 @@ def edge_paths(tones, width, height, draw_w, draw_h, threshold):
             gy = (tones[i + width] - tones[i - width]) * .5
             gradient[i] = math.hypot(gx, gy)
             angles[i] = math.atan2(gy, gx)
+    # Morphology acts on the gradient band (wide enough to survive an opening), not on 1px edges.
+    mask = {y * width + x for y in range(1, height - 1) for x in range(1, width - 1)
+            if gradient[y * width + x] >= threshold * .4}
+    if morph:
+        # Close then open (3x3): shaded blobs merge into the main line instead of looping.
+        mask = _morph(_morph(_morph(_morph(mask, width, height, True), width, height, False),
+                             width, height, False), width, height, True)
+    return gradient, angles, mask
+
+
+def centerline_paths(tones, width, height, draw_w, draw_h, threshold, morph=True):
+    """Zhang-Suen thin the ink band so one pencil line becomes one centerline, then trace it."""
+    _, _, mask = _band(tones, width, height, threshold, morph)
+    skel = set(mask)
+    offsets = (-width, -width + 1, 1, width + 1, width, width - 1, -1, -width - 1)  # P2..P9
+    while True:
+        changed = False
+        for phase in (0, 1):
+            doomed = []
+            for i in skel:
+                p = [(i + o) in skel for o in offsets]
+                if not 2 <= sum(p) <= 6:
+                    continue
+                if sum((not p[k]) and p[(k + 1) % 8] for k in range(8)) != 1:
+                    continue
+                p2, p4, p6, p8 = p[0], p[2], p[4], p[6]
+                if phase == 0:
+                    ok = not (p2 and p4 and p6) and not (p4 and p6 and p8)
+                else:
+                    ok = not (p2 and p4 and p8) and not (p2 and p6 and p8)
+                if ok:
+                    doomed.append(i)
+            skel.difference_update(doomed)
+            changed = changed or bool(doomed)
+        if not changed:
+            break
+    # Greedy edge-style walk: staircase corners are not junctions, so one pencil line stays one run.
+    # Short side branches come out as separate runs for tidy_strokes to prune as spurs.
+    eight = (-width - 1, -width, -width + 1, -1, 1, width - 1, width, width + 1)
+    deg = {i: sum((i + o) in skel for o in eight) for i in skel}
+    left, runs = set(skel), []
+    for start in sorted(skel, key=lambda i: (deg[i] != 1, i)):
+        if start not in left:
+            continue
+        left.discard(start)
+        path, cur = [start], start
+        while True:
+            nxt = [j for j in (cur + o for o in eight) if j in left]
+            if not nxt:
+                break
+            # Prefer 4-neighbours so diagonal shortcuts do not skip staircase steps.
+            cur = min(nxt, key=lambda j: abs(j % width - cur % width) + abs(j // width - cur // width))
+            left.discard(cur)
+            path.append(cur)
+        runs.append(path)
+    sx, sy = draw_w / (width - 1), draw_h / (height - 1)
+    for path in runs:
+        if len(path) >= 2:
+            yield [(i % width * sx, i // width * sy) for i in path]
+
+
+def edge_paths(tones, width, height, draw_w, draw_h, threshold, min_area=0, morph=False):
+    """Trace thinned local gradient edges into polylines; drop edge specks under min_area pixels."""
+    sx, sy = draw_w / (width - 1), draw_h / (height - 1)
+    gradient, angles, mask = _band(tones, width, height, threshold, morph)
     edges = set()
-    for y in range(1, height - 1):
-        for x in range(1, width - 1):
-            i = y * width + x
-            magnitude = gradient[i]
-            if magnitude < threshold * .4:
-                continue
-            angle = round(angles[i] / (math.pi / 4)) % 4
-            offset = (1, width + 1, width, width - 1)[angle]
-            if magnitude >= gradient[i - offset] and magnitude >= gradient[i + offset]:
-                edges.add(i)
+    for i in mask:
+        if not (1 <= i // width < height - 1 and 1 <= i % width < width - 1):
+            continue
+        magnitude = gradient[i]
+        angle = round(angles[i] / (math.pi / 4)) % 4
+        offset = (1, width + 1, width, width - 1)[angle]
+        if magnitude >= gradient[i - offset] and magnitude >= gradient[i + offset]:
+            edges.add(i)
     neighbors = lambda i: [j for j in (i-width-1, i-width, i-width+1, i-1, i+1, i+width-1, i+width, i+width+1)
                            if j in edges and abs(j % width - i % width) <= 1]
+    # Despeckle: remove 8-connected edge components smaller than min_area pixels.
+    seen = set()
+    for seed in list(edges):
+        if seed in seen:
+            continue
+        part, stack = [], [seed]
+        seen.add(seed)
+        while stack:
+            i = stack.pop()
+            part.append(i)
+            for j in neighbors(i):
+                if j not in seen:
+                    seen.add(j)
+                    stack.append(j)
+        if len(part) < min_area:
+            edges.difference_update(part)
     # Endpoints first, then closed loops. Consume pixels to avoid repeated edges.
     starts = sorted(edges, key=lambda i: (len(neighbors(i)) != 1, i))
     for start in starts:

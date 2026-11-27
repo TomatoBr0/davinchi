@@ -42,7 +42,7 @@
       image.src = url;
       await image.decode();
       if (token !== generation) return;
-      const ratio = Math.min(1, 240 / Math.max(image.naturalWidth, image.naturalHeight));
+      const ratio = Math.min(1, 480 / Math.max(image.naturalWidth, image.naturalHeight));
       const width = Math.max(2, Math.round(image.naturalWidth * ratio));
       const height = Math.max(2, Math.round(image.naturalHeight * ratio));
       const canvas = document.createElement("canvas");
@@ -83,12 +83,14 @@
           spacing_mm: Number(el("photo-spacing").value),
           contrast: Number(el("photo-contrast").value),
           threshold: Number(el("photo-threshold").value),
-          seed: Number(el("photo-seed").value)})
+          seed: Number(el("photo-seed").value),
+          cleanup: el("photo-cleanup").value, outline_mode: el("photo-outline-mode").value})
       });
       const data = await response.json();
       if (token !== generation) return;
       if (!response.ok) throw new Error(data.error || "Conversion failed");
       result = data;
+      window.davinciMachine?.loadJob(data.uno_gcode, "Photo drawing");
       el("photo-preview").innerHTML = data.svg;
       el("photo-svg").disabled = el("photo-code").disabled = false;
       status(data.stroke_count + " pen strokes · " + data.draw_length_mm +

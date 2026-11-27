@@ -1,0 +1,153 @@
+{
+  "page": {
+    "size": "letter",
+    "width_mm": 215.9,
+    "height_mm": 279.4,
+    "origin": "bottom-left, y up; the origin is the plotter origin (paper corner)"
+  },
+  "dictionary": "DICT_4X4_50",
+  "marker_corner_order": "TL, TR, BR, BL (as printed, matches cv2.aruco.detectMarkers)",
+  "markers": [
+    {
+      "id": 0,
+      "role": "top-left",
+      "size_mm": 20.0,
+      "corners_mm": [
+        [
+          10.0,
+          269.4
+        ],
+        [
+          30.0,
+          269.4
+        ],
+        [
+          30.0,
+          249.39999999999998
+        ],
+        [
+          10.0,
+          249.39999999999998
+        ]
+      ]
+    },
+    {
+      "id": 1,
+      "role": "top-right",
+      "size_mm": 20.0,
+      "corners_mm": [
+        [
+          185.9,
+          269.4
+        ],
+        [
+          205.9,
+          269.4
+        ],
+        [
+          205.9,
+          249.39999999999998
+        ],
+        [
+          185.9,
+          249.39999999999998
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "role": "bottom-right",
+      "size_mm": 20.0,
+      "corners_mm": [
+        [
+          185.9,
+          30.0
+        ],
+        [
+          205.9,
+          30.0
+        ],
+        [
+          205.9,
+          10.0
+        ],
+        [
+          185.9,
+          10.0
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "role": "bottom-left",
+      "size_mm": 20.0,
+      "corners_mm": [
+        [
+          10.0,
+          30.0
+        ],
+        [
+          30.0,
+          30.0
+        ],
+        [
+          30.0,
+          10.0
+        ],
+        [
+          10.0,
+          10.0
+        ]
+      ]
+    }
+  ],
+  "square": {
+    "lower_left_mm": [
+      58.0,
+      90.0
+    ],
+    "size_mm": 100.0,
+    "corners_mm": [
+      [
+        58.0,
+        90.0
+      ],
+      [
+        158.0,
+        90.0
+      ],
+      [
+        158.0,
+        190.0
+      ],
+      [
+        58.0,
+        190.0
+      ]
+    ],
+    "center_mm": [
+      108.0,
+      140.0
+    ],
+    "corner_order": "BL, BR, TR, TL"
+  },
+  "crosshair": {
+    "center_mm": [
+      108.0,
+      140.0
+    ],
+    "arm_mm": 10.0
+  },
+  "x_ruler": {
+    "x0_mm": 10.0,
+    "x1_mm": 160.0,
+    "y_mm": 80.0,
+    "length_mm": 150.0
+  },
+  "y_ruler": {
+    "x_mm": 50.0,
+    "y0_mm": 90.0,
+    "y1_mm": 190.0,
+    "length_mm": 100.0
+  }
+}

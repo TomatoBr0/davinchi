@@ -6,15 +6,28 @@ import json
 import math
 import os
 import random
+import re
+import socket
 import sqlite3
+import threading
+import time
+from collections import deque
+from contextlib import contextmanager, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+from send_plot import preflight
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 DB_PATH = Path(os.environ.get("DAVINCHI_DB", str(ROOT / "data" / "samples.sqlite3")))
 MAX_BODY = 1_000_000
+MAX_JOB_BODY = 8_000_000
+CALIBRATION_FILES = {"/calibration_test.nc": ROOT / "tools" / "calibration_test.nc",
+                     "/calibration_sheet.pdf": ROOT / "docs" / "calibration" / "calibration_sheet.pdf"}
+MIME = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+        ".nc": "text/plain", ".pdf": "application/pdf"}
 
 
 def num(value, name, minimum, maximum):
@@ -72,8 +85,15 @@ class Store:
                 strokes_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=10)
+        # sqlite3's own "with" only commits; close explicitly so Windows can delete the file.
+        db = sqlite3.connect(self.path, timeout=10)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def add(self, payload):
         item = validate_sample(payload)
@@ -286,7 +306,252 @@ def compose(payload, library):
     }
 
 
-def make_handler(store):
+BAUD = 115200
+RUN_STATES = ("running", "paused", "stopping")
+PYSERIAL_HINT = "pyserial is not installed: run  pip install pyserial"
+M115_RE = re.compile(r"ok CAL=([01]) ORIGIN=([01]) ARMED=([01]) MAX X(-?[\d.]+) Y(-?[\d.]+) Z(-?[\d.]+) "
+                     r"STEPS X(-?[\d.]+) Y(-?[\d.]+) Z(-?[\d.]+)")
+M114_RE = re.compile(r"ok X(-?[\d.]+) Y(-?[\d.]+) Z(-?[\d.]+) (known|unknown)")
+LIMITS_RE = re.compile(r"ok X(-?[\d.]+) Y(-?[\d.]+) F(-?[\d.]+)")
+
+
+class MachineError(Exception):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
+def parse_status(reply):
+    """M115: calibration flags, travel and steps/mm. Returns None if the reply does not match."""
+    m = M115_RE.fullmatch(reply)
+    if not m:
+        return None
+    n = [float(m[i]) for i in range(4, 10)]
+    return {"cal": m[1] == "1", "origin": m[2] == "1", "armed": m[3] == "1",
+            "maxX": n[0], "maxY": n[1], "maxZ": n[2], "stepsX": n[3], "stepsY": n[4], "stepsZ": n[5]}
+
+
+def parse_position(reply):
+    m = M114_RE.fullmatch(reply)
+    if not m:
+        return None
+    return {"x": float(m[1]), "y": float(m[2]), "z": float(m[3]), "known": m[4] == "known"}
+
+
+def open_serial(port):
+    try:
+        import serial
+    except ImportError as exc:
+        raise MachineError(PYSERIAL_HINT, 503) from exc
+    try:
+        return serial.Serial(port, BAUD, timeout=.25, write_timeout=2)
+    except OSError as exc:
+        raise MachineError(f"cannot open {port}: {exc}") from exc
+
+
+def list_ports():
+    try:
+        from serial.tools import list_ports as comports
+    except ImportError:
+        return {"available": False, "ports": [], "error": PYSERIAL_HINT}
+    return {"available": True, "error": "",
+            "ports": [{"device": p.device, "description": p.description} for p in comports.comports()]}
+
+
+class MachineLink:
+    """Owns the USB port to the Uno. Every command waits for ok/error before the next is sent,
+    because the firmware aborts motion on any stray byte. Polling only happens while idle."""
+
+    def __init__(self, opener=None, reset_wait=2.0):
+        self.opener = opener or open_serial
+        self.reset_wait = reset_wait
+        self.io = threading.Lock()          # serialises port access
+        self.control = threading.Condition()  # guards pause/stop flags
+        self.port = None
+        self.port_name = ""
+        self.log = deque(maxlen=400)
+        self.status = {}
+        self.job = {"state": "idle", "index": 0, "total": 0, "error": "", "name": ""}
+        self.stop_requested = False
+        self.paused = False
+
+    def _active(self):
+        return self.job["state"] in RUN_STATES
+
+    def _read_reply(self, line, timeout):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = self.port.readline().decode("ascii", errors="replace").strip()
+            if not reply:
+                continue
+            self.log.append("< " + reply)
+            if reply == "ok" or reply.startswith("ok "):
+                return reply
+            if reply.startswith("error:"):
+                raise MachineError(reply[6:].strip())
+        raise MachineError(f"no reply to {line}")
+
+    def _exchange(self, line, timeout=120):
+        with self.io:
+            if self.port is None:
+                raise MachineError("not connected")
+            self.log.append("> " + line)
+            self.port.write((line + "\n").encode("ascii"))
+            return self._read_reply(line, timeout)
+
+    def connect(self, port):
+        with self.io:
+            if self.port is not None:
+                raise MachineError("already connected; disconnect first")
+            self.port = self.opener(port)
+            self.port_name = port
+            time.sleep(self.reset_wait)  # the Uno resets when the port opens
+            self.port.reset_input_buffer()
+        self.status = {}
+        self.log.append(f"connected to {port} at {BAUD} baud")
+        with suppress(MachineError):
+            limits = LIMITS_RE.fullmatch(self._exchange("LIMITS"))
+            if limits:
+                self.status["feed"] = float(limits[3])
+        return self.info()
+
+    def disconnect(self):
+        if self._active():
+            raise MachineError("stop the job before disconnecting")
+        with self.io:
+            if self.port is not None:
+                with suppress(OSError):
+                    self.port.close()
+                self.port = None
+        self.status = {}
+        self.log.append("disconnected")
+        return self.info()
+
+    def send(self, line):
+        line = line.strip()
+        if not line or len(line) > 62 or not line.isascii() or line == "!":
+            raise MachineError("send one ASCII command up to 62 characters; use Abort for !")
+        if self._active():
+            raise MachineError("a job is running; pause or stop it first")
+        return self._exchange(line)
+
+    def abort(self):
+        with self.control:
+            if self.port is None:
+                raise MachineError("not connected")
+            self.stop_requested = True
+            self.control.notify_all()
+            self.log.append("> !  (abort)")
+            try:
+                # Twice, then flush: one stray byte must never be the only stop.
+                self.port.write(b"!\n!\n")  # firmware disarms; the in-flight line reports the error
+                self.port.flush()
+            except OSError as exc:
+                raise MachineError(f"abort write failed: {exc}", 503) from exc
+        return self.info()
+
+    def refresh(self):
+        """Poll M115 and M114 while idle. Skipped during a job, where motion is in progress."""
+        if self.port is None or self._active():
+            return
+        status = parse_status(self._exchange("M115"))
+        position = parse_position(self._exchange("M114"))
+        if status is None or position is None:
+            raise MachineError("unexpected status reply")
+        self.status = {**self.status, **status, **position}
+
+    def info(self):
+        return {"connected": self.port is not None, "port": self.port_name,
+                "status": dict(self.status), "job": dict(self.job), "log": list(self.log)[-200:]}
+
+    def snapshot(self):
+        error = ""
+        try:
+            self.refresh()
+        except MachineError as exc:
+            error = str(exc)
+        return {**self.info(), "poll_error": error}
+
+    def start_job(self, text, name=""):
+        if self.port is None:
+            raise MachineError("not connected")
+        if self._active():
+            raise MachineError("a job is already running")
+        try:
+            commands, _extent, _strokes = preflight(text)
+        except ValueError as exc:
+            raise MachineError(str(exc)) from exc
+        self.refresh()
+        if not self.status.get("origin"):
+            raise MachineError("set the origin (M210) before streaming")
+        self._exchange("ARM")
+        with self.control:
+            if self._active():
+                raise MachineError("a job is already running")
+            self.stop_requested = False
+            self.paused = False
+            self.job = {"state": "running", "index": 0, "total": len(commands), "error": "", "name": name[:80]}
+        threading.Thread(target=self._run_job, args=(commands,), daemon=True).start()
+        return self.info()
+
+    def _run_job(self, commands):
+        stopped = False
+        try:
+            for index, line in enumerate(commands, 1):
+                with self.control:
+                    self.control.wait_for(lambda: not self.paused or self.stop_requested)
+                    stopped = self.stop_requested
+                if stopped:
+                    break
+                self._exchange(line)
+                self.job["index"] = index
+            if stopped:
+                self._exchange("M5")  # pen up after the current line has finished
+                self.job["state"] = "stopped"
+            else:
+                self.job["state"] = "done"
+        except Exception as exc:
+            if self.stop_requested:
+                # Stopping disarms the drivers, so M5 cannot run: report a clean stop.
+                self.job["state"] = "stopped"
+                self.job["error"] = ""
+            else:
+                self.job["state"] = "error"
+                self.job["error"] = str(exc)
+                with suppress(Exception):
+                    self._exchange("M5")
+
+    def pause(self):
+        with self.control:
+            if self.job["state"] != "running":
+                raise MachineError("no running job to pause")
+            self.paused = True
+            self.job = {**self.job, "state": "paused"}
+        return self.info()
+
+    def resume(self):
+        with self.control:
+            if self.job["state"] != "paused":
+                raise MachineError("job is not paused")
+            self.paused = False
+            self.job = {**self.job, "state": "running"}
+            self.control.notify_all()
+        return self.info()
+
+    def stop(self):
+        with self.control:
+            if not self._active():
+                raise MachineError("no running job")
+            self.stop_requested = True
+            self.paused = False
+            self.job = {**self.job, "state": "stopping"}
+            self.control.notify_all()
+        return self.info()
+
+
+def make_handler(store, link=None):
+    link = link or MachineLink()
+
     class Handler(BaseHTTPRequestHandler):
         def _json(self, obj, status=200):
             encoded = json.dumps(obj).encode("utf-8")
@@ -297,9 +562,9 @@ def make_handler(store):
             self.end_headers()
             self.wfile.write(encoded)
 
-        def _body(self):
+        def _body(self, limit=MAX_BODY):
             length = self.headers.get("Content-Length")
-            if length is None or not length.isdecimal() or int(length) > MAX_BODY:
+            if length is None or not length.isdecimal() or int(length) > limit:
                 raise ValueError("Invalid request body size")
             raw = self.rfile.read(int(length))
             try:
@@ -307,18 +572,49 @@ def make_handler(store):
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise ValueError("Malformed JSON") from exc
 
+        def _serial_post(self, action):
+            body = {}
+            if self.headers.get("Content-Length") not in (None, "0"):
+                body = self._body(MAX_JOB_BODY)
+            if not isinstance(body, dict):
+                raise ValueError("Expected an object")
+            if action == "connect":
+                return self._json(link.connect(str(body.get("port", ""))))
+            if action == "disconnect":
+                return self._json(link.disconnect())
+            if action == "send":
+                reply = link.send(str(body.get("line", "")))
+                return self._json({**link.info(), "reply": reply})
+            if action == "abort":
+                return self._json(link.abort())
+            if action == "job":
+                return self._json(link.start_job(str(body.get("text", "")), str(body.get("name", ""))))
+            if action == "job/pause":
+                return self._json(link.pause())
+            if action == "job/resume":
+                return self._json(link.resume())
+            if action == "job/stop":
+                return self._json(link.stop())
+            return self._json({"error": "Not found"}, 404)
+
         def do_GET(self):
             url = urlparse(self.path).path
             if url == "/api/samples":
                 return self._json({"samples": store.all()})
-            path = {"/": WEB / "index.html", "/app.js": WEB / "app.js",
-                    "/style.css": WEB / "style.css", "/photo.js": WEB / "photo.js"}.get(url)
+            if url == "/api/serial/ports":
+                return self._json(list_ports())
+            if url == "/api/serial/status":
+                return self._json(link.snapshot())
+            path = {"/": WEB / "index.html", "/app.js": WEB / "app.js", "/machine.js": WEB / "machine.js",
+                    "/slicer.html": WEB / "slicer.html", "/slicer.js": WEB / "slicer.js", "/slicer.css": WEB / "slicer.css",
+                    "/style.css": WEB / "style.css", "/photo.js": WEB / "photo.js",
+                    **CALIBRATION_FILES}.get(url)
             if path is None or not path.is_file():
                 return self._json({"error": "Not found"}, 404)
             raw = path.read_bytes()
-            mime = "text/html" if path.suffix == ".html" else "text/javascript" if path.suffix == ".js" else "text/css"
+            mime = MIME.get(path.suffix, "application/octet-stream")
             self.send_response(200)
-            self.send_header("Content-Type", mime + "; charset=utf-8")
+            self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Cache-Control", "no-store")
@@ -327,6 +623,8 @@ def make_handler(store):
 
         def do_POST(self):
             try:
+                if self.path.startswith("/api/serial/"):
+                    return self._serial_post(self.path.removeprefix("/api/serial/"))
                 data = self._body()
                 if self.path == "/api/samples":
                     return self._json({"id": store.add(data)}, 201)
@@ -336,6 +634,8 @@ def make_handler(store):
                 if self.path == "/api/compose":
                     return self._json(compose(data, store.all()))
                 return self._json({"error": "Not found"}, 404)
+            except MachineError as exc:
+                return self._json({"error": str(exc)}, exc.status)
             except (ValueError, TypeError) as exc:
                 return self._json({"error": str(exc)}, 400)
 
@@ -357,14 +657,41 @@ def make_handler(store):
     return Handler
 
 
+def lan_address():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))  # routing lookup only; nothing is sent
+            return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+class LocalHTTPServer(ThreadingHTTPServer):
+    # Windows honours SO_REUSEADDR by letting a second process bind a port that is
+    # already serving, so the new UI silently loses every request to the old one.
+    # Refuse the bind instead: a busy port must be an error, not a shared socket.
+    allow_reuse_address = False
+
+
 def serve():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--host", default=os.environ.get("DAVINCHI_HOST", "127.0.0.1"))
+    parser.add_argument("--lan", action="store_true",
+                        help="listen on 0.0.0.0 so a phone on this Wi-Fi can reach the UI")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("DAVINCHI_PORT", "8775")))
     args = parser.parse_args()
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(Store()))
-    print(f"Open http://{args.host}:{args.port} (Ctrl+C to stop)")
+    host = "0.0.0.0" if args.lan else args.host
+    try:
+        server = LocalHTTPServer((host, args.port), make_handler(Store(), MachineLink()))
+    except OSError as exc:
+        raise SystemExit(
+            f"Cannot listen on {host}:{args.port} - {exc}.\n"
+            "Another program (for example the Carl app on 8765) may hold that port.\n"
+            "Pick a free one:  python app.py --port 8780   (or set DAVINCHI_PORT)") from exc
+    print(f"Open http://127.0.0.1:{args.port} (Ctrl+C to stop)")
+    if host == "0.0.0.0":
+        print(f"LAN URL: http://{lan_address()}:{args.port}  (no login: anyone on this network can drive the plotter)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

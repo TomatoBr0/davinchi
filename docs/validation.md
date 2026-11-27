@@ -11,7 +11,7 @@ python -m unittest discover -s tests -v
 python app.py
 \`\`\`
 
-Open http://127.0.0.1:8765.
+Open http://127.0.0.1:8775.
 
 - [ ] Draw an actual word (with more than one connected stroke) on a touchscreen. Save. Refresh the page; the exact number/order of strokes survives.
 - [ ] Record 4-5 separate versions of \`a\` and a connected sample of \`th\`. Confirm each is a distinct stored sample.

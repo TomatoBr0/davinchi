@@ -62,7 +62,7 @@ Requires Python 3.10+.
 python app.py
 ```
 
-Open http://127.0.0.1:8765 in a browser. To access the UI on a separate touchscreen, run the program on that device or set up an authenticated local tunnel. Do **not** expose this development server to the internet.
+Open http://127.0.0.1:8775 in a browser. If that port is busy (the Carl app uses 8765), run `python app.py --port 8780` or set `DAVINCHI_PORT`. To access the UI on a separate touchscreen, run the program on that device or set up an authenticated local tunnel. Do **not** expose this development server to the internet.
 
 1. Enter a label such as `th`, `a`, or `together`.
 2. Write it on the training canvas; optionally load a photo as a tracing layer.

@@ -6,18 +6,30 @@
  * actual shield/driver wiring before connecting motor power.
  *
  * No settings are guessed: travel, steps/mm and pen endpoints must be
- * measured and entered while disarmed. All settings are RAM-only and reset
- * to zero at boot. No homing switches or servo are assumed. Z is the bed axis.
+ * measured and entered while disarmed. $ settings are RAM-only and reset at
+ * boot. Steps/mm (M92) and taught max X/Y (M211) are saved in EEPROM. The
+ * origin is never saved: after each boot, jog to the origin and send M210.
+ * Calibrate by jogging (no endstops), see docs/hardware.md. Status LEDs:
+ * A0 ready, A1 busy, A2 alarm, D13 heartbeat. No homing switches or servo
+ * are assumed. Z is the bed axis.
  */
 #include <Arduino.h>
 #include <stdlib.h>
 #include <math.h>
+#include <EEPROM.h>
 
 static const uint8_t X_STEP=2, X_DIR=5, Y_STEP=3, Y_DIR=6, Z_STEP=4, Z_DIR=7;
 static const uint8_t ENABLE_PIN=8; // CNC Shield V3 common shared active-low enable
 static const float MAX_FEED_MM_MIN=600.0f;
 static const float MAX_Z_FEED_MM_MIN=120.0f;
 static const uint8_t LINE_CAP=96;
+// Motion tunables (major-axis steps). Measure on the machine before raising.
+#define ACCEL_STEPS_PER_S2 500.0f   // accel and decel rate
+#define START_RATE_SPS 20.0f        // speed at move start and end (never a full stall)
+#define MAX_STEP_RATE_SPS 1000.0f    // hard cap, same as the old 1 kstep/s limit
+// Status LEDs: pin -> 220 ohm -> LED -> GND, so HIGH lights the LED.
+static const uint8_t LED_READY=A0, LED_BUSY=A1, LED_ALARM=A2, LED_HEART=13;
+#define JOG_FEED_MM_MIN 300.0f
 
 struct Axis { uint8_t stepPin, dirPin; float stepsPerMm, minMm, maxMm, posMm; };
 Axis ax[3]={{X_STEP,X_DIR,0,0,0,0},{Y_STEP,Y_DIR,0,0,0,0},{Z_STEP,Z_DIR,0,0,0,0}};
@@ -26,25 +38,70 @@ bool positionSet[3]={false,false,false};
 bool penUpSet=false, penDownSet=false;
 float penUpZ=0, penDownZ=0;
 char lineBuf[LINE_CAP]; uint8_t lineLen=0; bool lineOverflow=false;
+bool calibrated=false, busy=false, errorLatched=false; // calibrated = max X/Y taught (M211)
+unsigned long lastLineMs=0;
 
-void replyError(const __FlashStringHelper *s) { Serial.print(F("error: ")); Serial.println(s); }
-void replyError(const char *s) { Serial.print(F("error: ")); Serial.println(s); }
+void replyError(const __FlashStringHelper *s) { errorLatched=true; Serial.print(F("error: ")); Serial.println(s); }
+void replyError(const char *s) { errorLatched=true; Serial.print(F("error: ")); Serial.println(s); }
 bool readyConfig() {
   for (uint8_t i=0;i<3;i++) if (ax[i].stepsPerMm<=0 || ax[i].maxMm<=ax[i].minMm) return false;
   return true;
 }
+// Park every driver input at a known level and switch the drivers OFF.
+// Leaving them as floating INPUTs re-enabled the active-low ENABLE (a floating
+// EN reads LOW = motors on) and let noise on the open STEP pins keep stepping,
+// which made an abort look like the machine ignoring it.
 void pinsFloat() {
   for (uint8_t i=0;i<3;i++) {
-    pinMode(ax[i].stepPin,INPUT); digitalWrite(ax[i].stepPin,LOW);
-    pinMode(ax[i].dirPin,INPUT); digitalWrite(ax[i].dirPin,LOW);
+    digitalWrite(ax[i].stepPin,LOW); pinMode(ax[i].stepPin,OUTPUT);
+    digitalWrite(ax[i].dirPin,LOW);  pinMode(ax[i].dirPin,OUTPUT);
   }
-  pinMode(ENABLE_PIN,INPUT); digitalWrite(ENABLE_PIN,LOW); // no internal pull-up
+  digitalWrite(ENABLE_PIN,HIGH); pinMode(ENABLE_PIN,OUTPUT); // HIGH = disabled
 }
 void disarm() {
-  if(armed) { digitalWrite(ENABLE_PIN,HIGH); pinMode(ENABLE_PIN,OUTPUT); }
   armed=false; penDown=false; pinsFloat();
   for(uint8_t i=0;i<3;i++) positionSet[i]=false;
 }
+bool posKnown() { return positionSet[0]&&positionSet[1]&&positionSet[2]; }
+void enableDrivers() {
+  digitalWrite(ENABLE_PIN,HIGH); pinMode(ENABLE_PIN,OUTPUT);
+  for(uint8_t i=0;i<3;i++){digitalWrite(ax[i].stepPin,LOW);pinMode(ax[i].stepPin,OUTPUT);digitalWrite(ax[i].dirPin,LOW);pinMode(ax[i].dirPin,OUTPUT);}
+  digitalWrite(ENABLE_PIN,LOW);
+  armed=true;
+}
+// Calibration record in EEPROM, written only by M92 and M211.
+struct CalRecord { uint8_t magic, version, calibrated; float stepsX, stepsY, stepsZ, maxX, maxY; };
+const uint8_t CAL_MAGIC=0xDA, CAL_VERSION=1;
+void saveCal() {
+  CalRecord r={CAL_MAGIC,CAL_VERSION,(uint8_t)(calibrated?1:0),ax[0].stepsPerMm,ax[1].stepsPerMm,ax[2].stepsPerMm,ax[0].maxMm,ax[1].maxMm};
+  EEPROM.put(0,r);
+}
+void loadCal() {
+  CalRecord r; EEPROM.get(0,r);
+  if(r.magic!=CAL_MAGIC||r.version!=CAL_VERSION) return;
+  if(r.stepsX>=0.1f&&r.stepsX<=2000) ax[0].stepsPerMm=r.stepsX;
+  if(r.stepsY>=0.1f&&r.stepsY<=2000) ax[1].stepsPerMm=r.stepsY;
+  if(r.stepsZ>=0.1f&&r.stepsZ<=2000) ax[2].stepsPerMm=r.stepsZ;
+  if(r.maxX>0&&r.maxX<=600) ax[0].maxMm=r.maxX;
+  if(r.maxY>0&&r.maxY<=600) ax[1].maxMm=r.maxY;
+  calibrated = r.calibrated==1 && ax[0].maxMm>0 && ax[1].maxMm>0;
+}
+// Each LED is written only when its state changes, so this is cheap in the step loop.
+void writeLed(uint8_t idx, uint8_t pin, bool on) {
+  static uint8_t out[4]={2,2,2,2};
+  if(out[idx]!=(on?1:0)) { digitalWrite(pin,on?HIGH:LOW); out[idx]=on?1:0; }
+}
+void updateLeds() {
+  unsigned long now=millis();
+  bool needCal=!calibrated||!posKnown();
+  bool alarm=errorLatched||(needCal&&((now/250UL)&1UL));              // 2 Hz blink
+  bool ready=!busy&&!errorLatched&&!needCal;                          // solid when idle
+  bool moving=busy&&(((now-lastLineMs)<2000UL)?((now/125UL)&1UL):1UL); // 4 Hz while job lines stream
+  bool heart=(now/500UL)&1UL;                                         // 1 Hz heartbeat
+  writeLed(0,LED_READY,ready); writeLed(1,LED_BUSY,moving);
+  writeLed(2,LED_ALARM,alarm); writeLed(3,LED_HEART,heart);
+}
+
 bool setParameter(const char *word) {
   // All values are measured by the operator. Settings are RAM-only.
   const char *eq=strchr(word,'='); if (!eq) return false;
@@ -81,13 +138,13 @@ bool interrupted() {
   return true;
 }
 
-bool moveTo(float target[3], float feed) {
+bool moveTo(float target[3], float feed, bool checkLimits) {
   if(!armed) { replyError(F("not armed")); return false; }
   if(feed<=0 || feed>MAX_FEED_MM_MIN) { replyError(F("feed out of range")); return false; }
   if(fabs(target[2]-ax[2].posMm)>0.0001f && feed>MAX_Z_FEED_MM_MIN) { replyError(F("Z feed out of range")); return false; }
   long dest[3], start[3], delta[3], ad[3]; long major=0;
   for(uint8_t i=0;i<3;i++) {
-    if(target[i]<ax[i].minMm-0.0001f || target[i]>ax[i].maxMm+0.0001f) { replyError(F("travel limit")); return false; }
+    if(checkLimits && (target[i]<ax[i].minMm-0.0001f || target[i]>ax[i].maxMm+0.0001f)) { replyError(F("travel limit")); return false; }
     dest[i]=lround(target[i]*ax[i].stepsPerMm); start[i]=lround(ax[i].posMm*ax[i].stepsPerMm);
     delta[i]=dest[i]-start[i]; ad[i]=labs(delta[i]); if(ad[i]>major) major=ad[i];
   }
@@ -98,40 +155,48 @@ bool moveTo(float target[3], float feed) {
   float distance=sqrtf((target[0]-ax[0].posMm)*(target[0]-ax[0].posMm)+
                        (target[1]-ax[1].posMm)*(target[1]-ax[1].posMm)+
                        (target[2]-ax[2].posMm)*(target[2]-ax[2].posMm));
-  unsigned long interval=(unsigned long)(60000000.0f*distance/(feed*major));
-  // Hard cap at 1 kstep/s even if a host supplies a faster feed or calibration.
-  if(interval<1000) interval=1000;
+  // Cruise rate in major-axis steps/s from the feed, capped at MAX_STEP_RATE_SPS.
+  float vC=(feed/60.0f)*(float)major/distance;
+  if(vC>MAX_STEP_RATE_SPS) vC=MAX_STEP_RATE_SPS;
+  if(vC<1.0f) vC=1.0f;
+  // No lookahead: the host is stop-and-wait, so every move ends at START rate.
+  float vS=(START_RATE_SPS<vC)?START_RATE_SPS:vC;
+  float vS2=vS*vS;
   long accum[3]={0,0,0};
+  busy=true;
+  unsigned long tNext=micros();
   for(long s=0;s<major;s++) {
-    for(uint8_t i=0;i<3;i++) accum[i]+=ad[i];
-    for(uint8_t i=0;i<3;i++) if(accum[i]>=major) { digitalWrite(ax[i].stepPin,HIGH); accum[i]-=major; }
-    delayMicroseconds(3);
-    for(uint8_t i=0;i<3;i++) digitalWrite(ax[i].stepPin,LOW);
-    if(interval>3) {
-      unsigned long waitUs=interval-3UL;
-      while(waitUs) {
-        if (interrupted()) return false;
-        unsigned int slice=(unsigned int)(waitUs>15000UL?15000UL:waitUs);
-        delayMicroseconds(slice); waitUs-=slice;
-      }
+    // Check for ! on every step, not only while waiting: a short/fast move could
+    // otherwise finish its whole loop without ever opening the wait window.
+    if(interrupted()) { busy=false; return false; }
+    if(s>0) {
+      // Symmetric trapezoid/triangle: speed depends on steps from the nearest end.
+      long m=(s<major-s)?s:major-s;
+      float v=sqrtf(vS2+2.0f*ACCEL_STEPS_PER_S2*(float)m);
+      if(v>vC) v=vC;
+      tNext+=(unsigned long)(1000000.0f/v);
     }
+    // Absolute schedule from tNext, so compute time does not drift the steps.
+    while((long)(micros()-tNext)<0) { if(interrupted()) { busy=false; return false; } updateLeds(); }
+    for(uint8_t i=0;i<3;i++) { accum[i]+=ad[i]; if(accum[i]>=major) { digitalWrite(ax[i].stepPin,HIGH); accum[i]-=major; } }
+    delayMicroseconds(3); // pulse width >= 2 us
+    for(uint8_t i=0;i<3;i++) digitalWrite(ax[i].stepPin,LOW);
   }
+  busy=false;
   for(uint8_t i=0;i<3;i++) ax[i].posMm=target[i];
   Serial.println(F("ok")); return true;
 }
 
 void processLine(char *line) {
+  errorLatched=false; // the red LED shows the most recent line's error
   for(char *p=line;*p;p++) if(*p>='a'&&*p<='z') *p-=32;
   char *save; char *w=strtok_r(line," \t",&save); if(!w) return;
   if(!strcmp(w,"ARM")) {
-    if(armed) { replyError(F("already armed")); return; }
     if(!readyConfig()||!penUpSet||!penDownSet||fabs(penUpZ-penDownZ)<0.01f||penUpZ<ax[2].minMm||penUpZ>ax[2].maxMm||penDownZ<ax[2].minMm||penDownZ>ax[2].maxMm) { replyError(F("configure measured steps/mm, travel and pen Z endpoints first")); return; }
     // Require a deliberate known origin on every boot before arming.
     if(!positionSet[0]||!positionSet[1]||!positionSet[2]||ax[0].posMm<ax[0].minMm||ax[0].posMm>ax[0].maxMm||ax[1].posMm<ax[1].minMm||ax[1].posMm>ax[1].maxMm||ax[2].posMm<ax[2].minMm||ax[2].posMm>ax[2].maxMm) { replyError(F("set measured position first")); return; }
-    digitalWrite(ENABLE_PIN,HIGH); pinMode(ENABLE_PIN,OUTPUT);
-    for(uint8_t i=0;i<3;i++){digitalWrite(ax[i].stepPin,LOW);pinMode(ax[i].stepPin,OUTPUT);digitalWrite(ax[i].dirPin,LOW);pinMode(ax[i].dirPin,OUTPUT);}
-    digitalWrite(ENABLE_PIN,LOW);
-    armed=true; Serial.println(F("ok")); return;
+    if(!armed) enableDrivers(); // idempotent: M17 may already have enabled the drivers
+    Serial.println(F("ok")); return;
   }
   if(!strcmp(w,"DISARM")) { disarm(); Serial.println(F("ok")); return; }
   if(w[0]=='$') {
@@ -151,8 +216,60 @@ void processLine(char *line) {
     if(!armed) { replyError(F("not armed")); return; }
     if(!penUpSet||!penDownSet) { replyError(F("set measured pen Z endpoints")); return; }
     float t[3]={ax[0].posMm,ax[1].posMm,(!strcmp(w,"M3")?penDownZ:penUpZ)};
-    if(moveTo(t,100.0f)) { penDown=!strcmp(w,"M3"); }
+    if(moveTo(t,100.0f,true)) { penDown=!strcmp(w,"M3"); }
     return;
+  }
+  if(!strcmp(w,"M17")) { enableDrivers(); Serial.println(F("ok")); return; }
+  if(!strcmp(w,"M18")) { disarm(); Serial.println(F("ok")); return; } // disarm() marks position unknown
+  if(!strcmp(w,"M92")) {
+    if(armed) { replyError(F("disarm before configuration")); return; }
+    bool any=false;
+    while((w=strtok_r(NULL," \t",&save))) {
+      char c=w[0]; char *e; float v=(float)strtod(w+1,&e);
+      uint8_t i=(c=='X')?0:(c=='Y')?1:(c=='Z')?2:3;
+      if(i==3||e==w+1||*e||!isfinite(v)||v<0.1f||v>2000.0f) { replyError(F("M92 needs X/Y/Z steps per mm")); return; }
+      ax[i].stepsPerMm=v; any=true;
+    }
+    if(!any) { replyError(F("M92 needs X/Y/Z steps per mm")); return; }
+    saveCal(); Serial.println(F("ok")); return;
+  }
+  if(!strcmp(w,"G92") || !strcmp(w,"M210")) {
+    // M210 is G92 X0 Y0 Z0: the jogged-to corner becomes the origin.
+    bool m210=!strcmp(w,"M210"), any=m210;
+    float v[3]={0,0,0}; bool has[3]={m210,m210,m210};
+    while(!m210 && (w=strtok_r(NULL," \t",&save))) {
+      char *e; float x=(float)strtod(w+1,&e);
+      uint8_t i=(w[0]=='X')?0:(w[0]=='Y')?1:(w[0]=='Z')?2:3;
+      if(i==3||e==w+1||*e||!isfinite(x)) { replyError(F("G92 takes X/Y/Z values")); return; }
+      v[i]=x; has[i]=true; any=true;
+    }
+    if(!any) { replyError(F("G92 requires an axis")); return; }
+    for(uint8_t i=0;i<3;i++) if(has[i]) { ax[i].posMm=v[i]; positionSet[i]=true; }
+    Serial.println(F("ok")); return;
+  }
+  if(!strcmp(w,"M211")) {
+    // Current X/Y becomes the max travel corner. The origin must be set first.
+    if(!positionSet[0]||!positionSet[1]) { replyError(F("set origin with M210 first")); return; }
+    if(ax[0].posMm<=0||ax[1].posMm<=0||ax[0].posMm>600||ax[1].posMm>600) { replyError(F("max corner must be >0 and <=600 mm")); return; }
+    ax[0].maxMm=ax[0].posMm; ax[1].maxMm=ax[1].posMm; calibrated=true;
+    saveCal(); Serial.println(F("ok")); return;
+  }
+  if(!strcmp(w,"M114")) {
+    Serial.print(F("ok X")); Serial.print(ax[0].posMm,3);
+    Serial.print(F(" Y")); Serial.print(ax[1].posMm,3);
+    Serial.print(F(" Z")); Serial.print(ax[2].posMm,3);
+    Serial.println(posKnown()?F(" known"):F(" unknown")); return;
+  }
+  if(!strcmp(w,"M115")) {
+    Serial.print(F("ok CAL=")); Serial.print(calibrated?1:0);
+    Serial.print(F(" ORIGIN=")); Serial.print(posKnown()?1:0);
+    Serial.print(F(" ARMED=")); Serial.print(armed?1:0);
+    Serial.print(F(" MAX X")); Serial.print(ax[0].maxMm,3);
+    Serial.print(F(" Y")); Serial.print(ax[1].maxMm,3);
+    Serial.print(F(" Z")); Serial.print(ax[2].maxMm,3);
+    Serial.print(F(" STEPS X")); Serial.print(ax[0].stepsPerMm,3);
+    Serial.print(F(" Y")); Serial.print(ax[1].stepsPerMm,3);
+    Serial.print(F(" Z")); Serial.println(ax[2].stepsPerMm,3); return;
   }
   if(!strcmp(w,"G4")) {
     if(!armed) { replyError(F("not armed")); return; }
@@ -167,6 +284,7 @@ void processLine(char *line) {
     unsigned long until=millis()+(unsigned long)dwell;
     while((long)(until-millis())>0) {
       if (interrupted()) return;
+      updateLeds();
       delay(1);
     }
     Serial.println(F("ok")); return;
@@ -185,16 +303,31 @@ void processLine(char *line) {
     if(hasY) t[1]=absoluteMode?val[1]:t[1]+val[1];
     if(hasZ) t[2]=absoluteMode?val[2]:t[2]+val[2];
     float feed=hasF?val[3]:(rapid?600.0f:300.0f);
-    moveTo(t,feed); return;
+    moveTo(t,feed,true); return;
+  }
+  if(!strcmp(w,"J")) {
+    // Relative jog. Ignores travel limits, so it works before calibration.
+    bool hasAxis=false; float d[3]={0,0,0}, feed=JOG_FEED_MM_MIN;
+    while((w=strtok_r(NULL," \t",&save))) {
+      char c=w[0]; char *e; float v=(float)strtod(w+1,&e);
+      if(e==w+1||*e||!isfinite(v)) { replyError(F("bad word")); return; }
+      if(c=='X'){d[0]=v;hasAxis=true;} else if(c=='Y'){d[1]=v;hasAxis=true;} else if(c=='Z'){d[2]=v;hasAxis=true;} else if(c=='F'){feed=v;} else { replyError(F("unsupported word")); return; }
+    }
+    if(!hasAxis) { replyError(F("J requires an axis")); return; }
+    float t[3]; for(uint8_t i=0;i<3;i++) t[i]=ax[i].posMm+d[i];
+    moveTo(t,feed,false); return;
   }
   replyError(F("unsupported command"));
 }
 
 void setup() {
   pinsFloat(); Serial.begin(115200);
+  pinMode(LED_READY,OUTPUT); pinMode(LED_BUSY,OUTPUT); pinMode(LED_ALARM,OUTPUT); pinMode(LED_HEART,OUTPUT);
+  loadCal();
   Serial.println(F("DaVinci plotter ready; unarmed; G21 G90; send measured config, then ARM, M5"));
 }
 void loop() {
+  updateLeds();
   while(Serial.available()) {
     char c=(char)Serial.read();
     if(c=='!') {
@@ -205,6 +338,7 @@ void loop() {
     }
     if(c=='\r') continue;
     if(c=='\n') {
+      lastLineMs=millis();
       if(lineOverflow) replyError(F("line too long"));
       else { lineBuf[lineLen]='\0'; processLine(lineBuf); }
       lineLen=0; lineOverflow=false;

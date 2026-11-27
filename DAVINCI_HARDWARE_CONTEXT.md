@@ -282,7 +282,7 @@ A4988 ENA is active low. GRBL limit mapping/revision details and physical endsto
 
 Repository README was re-read when preparing this file on November 19. It describes:
 
-- Python 3.10+ local app, `python app.py`, default URL `http://127.0.0.1:8765`.
+- Python 3.10+ local app, `python app.py`, default URL `http://127.0.0.1:8775`.
 - Standard-library SQLite/HTTP, browser stroke capture with pen lifts, timestamps and pressure where supported.
 - Multiple handwriting variants for letters, connected sequences and words; optional contextual labels; SVG and offline GRBL-style G-code export.
 - Photo import is a manual tracing reference, not automatic recovery of stroke order/pressure.

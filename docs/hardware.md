@@ -129,6 +129,47 @@ This may be the better *final* design if your ESP32 is supported, but an ordinar
 
 Grbl parameters to validate include \`$100-102\` steps/mm, \`$110-112\` maximum rates, \`$120-122\` acceleration and \`$130-132\` travel. Never guess axis calibrations from a printer's advertised build size.
 
+## Plotter firmware status LEDs
+
+`firmware/plotter/plotter.ino` drives four indicator LEDs. Wire each one as **pin → 220 Ω → LED anode, LED cathode → GND**. Use the shield's GND pin.
+
+| LED | Pin | Meaning |
+|---|---|---|
+| Green | A0 | **READY**: solid when idle, no error, travel taught (M211) and origin known (M210) |
+| Yellow | A1 | **BUSY**: solid while a move runs; blinks 4 Hz while job lines are streaming |
+| Red | A2 | **ALARM**: solid after an error reply or an out-of-limits move; blinks 2 Hz when not calibrated or origin unknown |
+| Onboard | D13 | **HEARTBEAT**: 1 Hz blink means the firmware is running |
+
+**Pin warning:** A0–A2 are the CNC shield's abort / hold / resume header pins. The firmware uses them only as LED outputs. Do not wire buttons to those headers unless you move the LEDs.
+
+## Plotter commands for calibrating by jogging
+
+The endstops are not used. Position is taught by jogging.
+
+| Command | Effect |
+|---|---|
+| `M17` / `M18` | Enable / disable motors. `M18` lets you push the carriage by hand and marks the position unknown (red blinks). |
+| `J X.. Y.. Z.. [F..]` | Relative jog. Ignores travel limits. Needs `M17`. |
+| `M210` | Set the current position as origin (same as `G92 X0 Y0 Z0`). |
+| `G92 X.. Y.. Z..` | Set the current position to the given values. |
+| `M211` | Store the current X/Y as the max travel corner. Saved to EEPROM. |
+| `M92 X.. Y.. Z..` | Steps per mm. Saved to EEPROM. Disarmed only. |
+| `M114` | Report position. |
+| `M115` | Report calibrated flag, origin flag, armed state, max travel and steps/mm. |
+
+Steps/mm (`M92`) and the taught max X/Y (`M211`) survive power-off. The origin never does: the carriage position is unknown after every boot, so send `M210` each time. The `$` settings (`$ZMAX`, `$PENUP`, `$PENDOWN`, and so on) are still RAM-only and must be re-sent after each boot.
+
+### Calibrate by jogging
+
+1. Power on. The red LED blinks (not calibrated, origin unknown).
+2. Send `M17`. The motors hold the carriage.
+3. Jog to the front-left minimum corner, for example `J X-5 Y-5 F300`, watching for free travel and stopping before any hard stop.
+4. Send `M210`. The origin is set. Red keeps blinking until the max corner is taught.
+5. Jog to the far max corner, for example `J X200 Y150`, staying within the physical travel.
+6. Send `M211`. Max X/Y are saved. The green LED goes solid.
+
+After this, `G0`/`G1` moves outside `[0, max]` are rejected with `error: travel limit` and the red LED turns solid. If the carriage is moved by hand, send `M18`, then `M17`, `M210`, and re-teach as needed.
+
 ## Height variation: a reality check
 
 The stock Z motor moves the **entire bed**, not a lightweight pen. Constant movement in Z to imitate human pressure may be too slow or cause inconsistent contact. The app defaults to **zero Z variation** and exports only preview-only tool paths. Experiment with a compliant pen mount and small bounded variation after measuring which Z direction actually increases pressure. Arbitrary real pressure from a photo is not possible.
@@ -141,3 +182,10 @@ The stock Z motor moves the **entire bed**, not a lightweight pen. Constant move
 - Original driver boards if removable.
 - Exact Elegoo Uno and ESP32 module labels.
 - Whether optical endstops still work, and existing bed travel range.
+
+## Measured calibration (2026-11-26)
+
+- X 5 steps/mm, Y 5 steps/mm (drivers at full step; MS pins B2-B4 on GND). Z 160 steps/mm, +Z lowers the bed.
+- Facing the printer: +X moves left, +Y moves back. Usable X/Y travel about +-90 mm from centre.
+- Smoother motion: tie B2-B4 to 3.3 V (1/16 microstep, assuming A4988 pinout), then X/Y become 80 steps/mm.
+- tools/jog.py and tools/lily_run.py are the scripts used for live tests (COM6).

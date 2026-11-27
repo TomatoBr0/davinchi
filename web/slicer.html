@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Davinchi Slicer</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/slicer.css">
+</head>
+<body>
+<header>
+  <p class="eyebrow">Davinchi</p>
+  <h1>Slicer preview</h1>
+  <p>Turn a picture into pen paths, scrub through the job, then download the G-code or send it to the plotter.</p>
+</header>
+<main>
+  <section class="panel">
+    <label id="drop" class="drop">
+      <span id="drop-text">Drop a picture here, or click to choose one</span>
+      <span id="thumb" class="thumb"></span>
+      <input id="file" type="file" accept="image/*" hidden>
+    </label>
+    <div class="fields">
+      <label>Drawing style
+        <select id="style">
+          <option value="scribble">Wandering ink sketch</option>
+          <option value="squiggle">Squiggle waves</option>
+          <option value="outlines">Contour sketch</option>
+          <option value="springs">Spring coils</option>
+          <option value="halftone">Circle halftone</option>
+          <option value="boxes">Square halftone</option>
+          <option value="crosshatch">Crosshatching</option>
+          <option value="diagonal">Diagonal lines</option>
+          <option value="stipple">Stipple dots</option>
+          <option value="tour">Continuous tour</option>
+          <option value="spiral">Spiral</option>
+        </select>
+      </label>
+      <label>Cleanup
+        <select id="cleanup">
+          <option value="off">Off</option>
+          <option value="low">Low</option>
+          <option value="med" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+      <label>Outline mode
+        <select id="outline">
+          <option value="edge" selected>Edge contours</option>
+          <option value="centerline">Centerlines (experimental)</option>
+        </select>
+      </label>
+      <label>Page width, mm<input id="page-w" type="number" value="150" min="20" max="300"></label>
+      <label>Page height, mm<input id="page-h" type="number" value="150" min="20" max="300"></label>
+      <label>Mark spacing, mm<input id="spacing" type="number" value="1.2" min=".5" max="5" step=".1"></label>
+      <label>Contrast<input id="contrast" type="number" value="1.4" min=".3" max="3" step=".1"></label>
+      <label>Ink threshold<input id="threshold" type="number" value=".18" min=".02" max=".9" step=".02"></label>
+      <label>Random seed<input id="seed" type="number" value="1" min="0" max="2147483647"></label>
+    </div>
+    <div class="actions">
+      <button id="slice" class="primary" type="button"><span id="spinner" class="spinner" hidden></span>Slice</button>
+    </div>
+    <p id="status" class="status" role="status">Choose a picture to begin.</p>
+  </section>
+
+  <section id="viewer" class="panel" hidden>
+    <div class="stats">
+      <div><span>Strokes</span><strong id="stat-strokes">0</strong></div>
+      <div><span>Draw</span><strong id="stat-draw">0 mm</strong></div>
+      <div><span>Travel</span><strong id="stat-travel">0 mm</strong></div>
+      <div><span>Est. time</span><strong id="stat-time">0:00</strong></div>
+      <div><span>Progress</span><strong id="stat-progress">0 / 0</strong></div>
+    </div>
+    <div class="viewer">
+      <div class="canvas-wrap">
+        <canvas id="view"></canvas>
+        <button id="fit" class="secondary small" type="button">Fit</button>
+      </div>
+      <div id="gcode-list" class="gcode" tabindex="0">
+        <div id="gcode-spacer"></div>
+        <div id="gcode-rows"></div>
+      </div>
+    </div>
+    <div class="transport">
+      <button id="play" class="primary small" type="button">Play</button>
+      <label>Speed
+        <select id="speed">
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+          <option value="10">10x</option>
+          <option value="20">20x</option>
+          <option value="50">50x</option>
+        </select>
+      </label>
+      <label class="grow">Step <span id="step-label"></span><input id="step" type="range" min="0" max="0" value="0"></label>
+      <label class="grow">Stroke <span id="stroke-label"></span><input id="stroke" type="range" min="0" max="0" value="0"></label>
+      <label class="check"><input id="travel" type="checkbox" checked> Show travel</label>
+    </div>
+    <div class="actions">
+      <button id="download" class="secondary" type="button">Download .nc</button>
+      <a id="send" class="secondary link-button" href="/index.html">Send to plotter</a>
+    </div>
+  </section>
+</main>
+<script src="/slicer.js" defer></script>
+</body>
+</html>

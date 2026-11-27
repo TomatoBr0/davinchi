@@ -140,6 +140,7 @@ $("compose").addEventListener("click",async()=>{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({text:$("text").value,seed:Number($("seed").value),options})});
     output=result;
+    window.davinciMachine?.loadJob(result.uno_gcode,"Composed handwriting");
     $("preview").innerHTML=result.svg; // Server emits fixed SVG from validated numeric paths.
     $("download-svg").disabled=false;$("download-gcode").disabled=false;
     $("download-uno").disabled=!result.uno_gcode;
