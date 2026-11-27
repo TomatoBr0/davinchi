@@ -1,4 +1,4 @@
-"""Sketch style: pressure data, tone tracking, auto-tune, and the lily pressure build.
+"""Sketch style: pressure data, tone tracking, auto-tune, and the DaVinci draw pressure build.
 
 Run: python -m pytest tests/test_sketch_style.py
 """
@@ -13,7 +13,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-import lily_run  # noqa: E402
+import davinci_draw  # noqa: E402
 from tools import sketch_style  # noqa: E402
 
 
@@ -65,14 +65,14 @@ class SketchTests(unittest.TestCase):
         self.assertTrue(0 <= blank["match"] <= 100)
 
 
-class LilyPressureTests(unittest.TestCase):
+class DrawPressureTests(unittest.TestCase):
     def svg(self, *paths):
         body = "".join(f'<path data-p="{p:.2f}" d="M' + " L".join(f"{x},{y}" for x, y in pts) + '"/>' for pts, p in paths)
         return f'<svg viewBox="0 0 100 100"><g fill="none">{body}</g></svg>'
 
     def test_z_moves_pair_up_and_down_back_to_travel_height(self):
         line = [(0, 0), (10, 0), (10, 10)]
-        cmds, info = lily_run.build(self.svg((line, 0.0), ([(50, 50), (60, 50)], 1.0)), fit=50, press=1.0)
+        cmds, info = davinci_draw.build(self.svg((line, 0.0), ([(50, 50), (60, 50)], 1.0)), fit=50, press=1.0)
         z, levels = 0.0, []
         for c in cmds:
             for w in c.split()[1:]:
@@ -83,8 +83,8 @@ class LilyPressureTests(unittest.TestCase):
         self.assertIn(round(z, 3), levels)
 
     def test_pressure_sets_pen_down_height(self):
-        light, _ = lily_run.build(self.svg(([(0, 0), (5, 0)], 0.0)), fit=50, press=1.5)
-        heavy, _ = lily_run.build(self.svg(([(0, 0), (5, 0)], 1.0)), fit=50, press=1.5)
+        light, _ = davinci_draw.build(self.svg(([(0, 0), (5, 0)], 0.0)), fit=50, press=1.5)
+        heavy, _ = davinci_draw.build(self.svg(([(0, 0), (5, 0)], 1.0)), fit=50, press=1.5)
         def first_down(cmds):
             return [float(c.split("Z-")[1].split()[0]) for c in cmds if c.startswith("J Z-")][1]
         self.assertAlmostEqual(first_down(heavy) - first_down(light), 1.5, places=3)
@@ -92,20 +92,20 @@ class LilyPressureTests(unittest.TestCase):
     def test_chain_joins_nearby_strokes_like_a_scribble(self):
         a, b = ([(0, 0), (5, 0)], 0.5), ([(5.5, 0), (9, 0)], 0.9)   # close: drawn through, no lift
         far = ([(20, 0), (25, 0)], 0.5)                             # beyond JOIN: lifts
-        self.assertEqual(len(lily_run.chain([a, b])), 1)
-        self.assertEqual(len(lily_run.chain([a, far])), 2)
+        self.assertEqual(len(davinci_draw.chain([a, b])), 1)
+        self.assertEqual(len(davinci_draw.chain([a, far])), 2)
 
     def test_svg_resolves_from_script_dir_and_writes_to_cwd(self):
         old = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 os.chdir(tmp)
-                script_svg = Path(lily_run.HERE) / "__lily_test.svg"
+                script_svg = Path(davinci_draw.HERE) / "__draw_test.svg"
                 script_svg.write_text(self.svg(([(0, 0), (4, 4)], .5)), encoding="utf-8")
                 try:
-                    self.assertEqual(lily_run.resolve("__lily_test.svg"), str(script_svg))
-                    lily_run.main(["lily_run.py", "__lily_test.svg", "fit=20"])
-                    self.assertTrue(Path(tmp, "lily_cmds.txt").is_file())
+                    self.assertEqual(davinci_draw.resolve("__draw_test.svg"), str(script_svg))
+                    davinci_draw.main(["davinci_draw.py", "__draw_test.svg", "fit=20"])
+                    self.assertTrue(Path(tmp, "davinci_cmds.txt").is_file())
                 finally:
                     script_svg.unlink()
             finally:
@@ -113,9 +113,9 @@ class LilyPressureTests(unittest.TestCase):
 
     def test_rejects_negative_press_and_empty_svg(self):
         with self.assertRaises(ValueError):
-            lily_run.build(self.svg(([(0, 0), (1, 1)], 0)), press=-1)
+            davinci_draw.build(self.svg(([(0, 0), (1, 1)], 0)), press=-1)
         with self.assertRaises(ValueError):
-            lily_run.build("<svg></svg>")
+            davinci_draw.build("<svg></svg>")
 
 
 if __name__ == "__main__":

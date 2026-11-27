@@ -21,7 +21,7 @@
 
 static const uint8_t X_STEP=2, X_DIR=5, Y_STEP=3, Y_DIR=6, Z_STEP=4, Z_DIR=7;
 static const uint8_t ENABLE_PIN=8; // CNC Shield V3 common shared active-low enable
-static const float MAX_FEED_MM_MIN=600.0f;
+static const float MAX_FEED_MM_MIN=1500.0f;
 static const float MAX_Z_FEED_MM_MIN=120.0f;
 static const uint8_t LINE_CAP=96;
 // Motion tunables (major-axis steps). Measure on the machine before raising.

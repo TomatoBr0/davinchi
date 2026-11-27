@@ -218,4 +218,4 @@ The stock Z motor moves the **entire bed**, not a lightweight pen. Constant move
 - X 5 steps/mm, Y 5 steps/mm (drivers at full step; MS pins B2-B4 on GND). Z 160 steps/mm, +Z lowers the bed.
 - Facing the printer: +X moves left, +Y moves back. Usable X/Y travel about +-90 mm from centre.
 - Smoother motion: tie B2-B4 to 3.3 V (1/16 microstep, assuming A4988 pinout), then X/Y become 80 steps/mm.
-- tools/jog.py and tools/lily_run.py are the scripts used for live tests (COM6).
+- tools/davinci_jog.py and tools/davinci_draw.py are the scripts used for live tests (COM6).

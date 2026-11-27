@@ -1,14 +1,15 @@
-"""Lily sketch SVG -> relative J jog commands (lily_cmds.txt), with per-stroke pressure.
+"""DaVinci drawing SVG -> relative J jog commands (davinci_cmds.txt), with per-stroke pressure.
 
-  python tools/lily_run.py [file.svg] [fit=150] [ang=0] [press=0] [run]
+  python tools/davinci_draw.py [file.svg] [fit=150] [ang=0] [press=0] [run]
 
 Pen-down height = writing height + press * data-p (bed up is -Z). LIFT 2 mm between strokes.
 Every Z move is paired: the bed comes back down by exactly what it went up, so each stroke returns
 to the same travel height. The one deliberate exception is the wear step (WEAR mm every WEAR_EVERY mm
 drawn), which raises the writing height permanently, as before.
-The SVG is looked up in the cwd, then next to this script. lily_cmds.txt is written to the cwd.
+The SVG is looked up in the cwd, then next to this script. davinci_cmds.txt is written to the cwd.
 """
 import math, os, re, subprocess, sys
+FEED = int(next((a[5:] for a in sys.argv if a.startswith('feed=')), 600))  # mm/min, firmware max 1500
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIFT, WEAR_EVERY, WEAR = 2.0, 2000.0, 0.1
@@ -42,10 +43,14 @@ def chain(paths):
     if not paths:
         raise ValueError("no paths in SVG")
     paths = list(paths)
-    (cur, cp), chains = paths.pop(0), []
+    # work from the middle outward: start at the stroke nearest the centre, and prefer central strokes next
+    xs = [p[0] for q, _ in paths for p in q]; ys = [p[1] for q, _ in paths for p in q]
+    c = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    rad = lambda q: min(math.dist(c, q[0]), math.dist(c, q[-1]))
+    (cur, cp), chains = paths.pop(min(range(len(paths)), key=lambda k: rad(paths[k][0]))), []
     while paths:
         e = cur[-1]
-        i = min(range(len(paths)), key=lambda k: min(math.dist(e, paths[k][0][0]), math.dist(e, paths[k][0][-1])))
+        i = min(range(len(paths)), key=lambda k: min(math.dist(e, paths[k][0][0]), math.dist(e, paths[k][0][-1])) + .3 * rad(paths[k][0]))
         q, qp = paths.pop(i)
         if math.dist(e, q[-1]) < math.dist(e, q[0]):
             q = q[::-1]
@@ -84,16 +89,16 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0):
         if len(path) < 2:
             continue
         rise = LIFT + press * pr                      # from travel up to this stroke's writing height
-        go(m(path[0]), 600)
+        go(m(path[0]), FEED)
         cmds.append(f'J Z-{rise + wear:.3f} F100'); wear = 0.0
         for p in path[1:]:
             if math.dist(m(p), pos) < 0.6 and p is not path[-1]:
                 continue
-            drawn += go(m(p), 600)
+            drawn += go(m(p), FEED)
         if drawn >= nextwear:
             wear = WEAR; nextwear += WEAR_EVERY
         cmds.append(f'J Z{rise:.3f} F100')            # paired return to travel height
-    cmds += [f'J X{-pos[0]:.3f} Y{-pos[1]:.3f} F600', f'J Z{5 - LIFT:.3f} F100']
+    cmds += [f'J X{-pos[0]:.3f} Y{-pos[1]:.3f} F{FEED}', f'J Z{5 - LIFT:.3f} F100']
     info = dict(strokes=len(chains), moves=len(cmds), draw_cm=round(drawn / 10),
                 size_mm=(round((max(xs) - min(xs)) * k), round((max(ys) - min(ys)) * k)))
     return cmds, info
@@ -101,15 +106,17 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0):
 
 def main(argv):
     opts = dict(a.split("=", 1) for a in argv[1:] if "=" in a)
-    svg = next((a for a in argv[1:] if a.endswith(".svg")), "lily_scribble.svg")
+    svg = next((a for a in argv[1:] if a.endswith(".svg")), None)
+    if not svg:
+        sys.exit("usage: davinci_draw.py drawing.svg [fit=150] [ang=0] [press=0] [feed=600] [run]")
     with open(resolve(svg), encoding="utf-8") as f:
         cmds, info = build(f.read(), float(opts.get("fit", 150)), float(opts.get("ang", 0)), float(opts.get("press", 0)))
     print(info["strokes"], "strokes", info["moves"], "moves", info["draw_cm"], "cm drawn", "size mm", info["size_mm"], file=sys.stderr)
-    out = os.path.join(os.getcwd(), "lily_cmds.txt")
+    out = os.path.join(os.getcwd(), "davinci_cmds.txt")
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(cmds))
     if "run" in argv[1:]:
-        subprocess.run([sys.executable, os.path.join(HERE, "jog.py"), "@" + out])
+        subprocess.run([sys.executable, os.path.join(HERE, "davinci_jog.py"), "@" + out])
 
 
 if __name__ == "__main__":

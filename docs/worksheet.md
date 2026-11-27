@@ -1,6 +1,6 @@
 # Fill a worksheet with the plotter
 
-`tools/worksheet.py` takes one phone photo of a US Letter worksheet on the bed, finds the page and a pen dot that marks the head, and writes J moves for `tools/jog.py`. No camera hardware, no extra cost.
+`tools/worksheet.py` takes one phone photo of a US Letter worksheet on the bed, finds the page and a pen dot that marks the head, and writes J moves for `tools/davinci_jog.py`. No camera hardware, no extra cost.
 
 ## Page size: four placements
 
@@ -29,8 +29,8 @@ The worksheet's top edge points away from you (toward the back of the machine), 
 2. Place the sheet so the target area from the table is under the head. Top edge away, text readable.
 3. Make the start dot. Lower the pen, touch the paper for a moment, and lift:
    ```
-   python tools/jog.py "J Z-5 F100"
-   python tools/jog.py "J Z5 F100"
+   python tools/davinci_jog.py "J Z-5 F100"
+   python tools/davinci_jog.py "J Z5 F100"
    ```
    Use a solid pen dot 4-6 mm wide. Do not move the head or the sheet between the dot and the photo.
 4. Photograph the sheet from directly above. Show all four paper corners, use a dark background under the paper, avoid glare, and keep the worksheet top edge at the top of the photo.
@@ -41,7 +41,7 @@ The worksheet's top edge points away from you (toward the back of the machine), 
    Check `worksheet_out/preview.png`. Blue strokes will be drawn here, red ones are out of reach for this placement, and the green box is the reach area.
 6. Draw:
    ```
-   python tools/jog.py @<absolute path printed as "run:">
+   python tools/davinci_jog.py @<absolute path printed as "run:">
    ```
    The job starts with the pen up, ends with the head back at the start, and leaves the pen up.
 7. Move the sheet to the next placement, return the head to centre, and repeat from step 1.
@@ -67,7 +67,7 @@ The planner looks for solid dots 3.5-8 mm wide. If there is exactly one, it is t
 
 ## Z convention
 
-Taken from `tools/lily_run.py`: travel height is `Z-3` from the bottom stop, pen down is `Z-2` more (writing height `Z-5`), and pen up is `Z+2`. The job starts at the bottom stop and returns there. If the pen writes too light or too heavy, change `LIFT` and `TRAVEL_Z` in `tools/worksheet.py` to match what `lily_run.py` uses on your machine.
+Taken from `tools/davinci_draw.py`: travel height is `Z-3` from the bottom stop, pen down is `Z-2` more (writing height `Z-5`), and pen up is `Z+2`. The job starts at the bottom stop and returns there. If the pen writes too light or too heavy, change `LIFT` and `TRAVEL_Z` in `tools/worksheet.py` to match what `davinci_draw.py` uses on your machine.
 
 ## Limits
 
