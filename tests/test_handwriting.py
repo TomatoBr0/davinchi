@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from tools import handwriting as hw  # noqa: E402  same module object app.py uses (OcrUnavailable identity)
 import app  # noqa: E402
-from lily_run import parse_svg  # noqa: E402
+from davinci_draw import parse_svg  # noqa: E402
 
 
 def notebook_png(lines=(("hello", 150), ("world", 330)), ruled=True):
@@ -167,7 +167,7 @@ class RenderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hw.render_text("é", 8, glyphs=[])
 
-    def test_svg_is_parseable_by_lily_run(self):
+    def test_svg_is_parseable_by_davinci_draw(self):
         svg = hw.to_svg(hw.render_text("hi", 8, self.glyphs, seed=3))
         self.assertIn("<path", svg)
         strokes = parse_svg(svg)

@@ -2,14 +2,16 @@
 
 Usage:
   python tools/worksheet.py photo.jpg answers.json [--out-dir DIR] [--start-mm X Y] [--dark 110]
-  python tools/jog.py @DIR/cmds.txt        (runs the job; you do this, not this script)
+  python tools/davinci_jog.py @DIR/cmds.txt        (runs the job; you do this, not this script)
 
 answers.json: [{"x": 20, "y": 30, "text": "NAME: ALEX", "size_mm": 5}, ...]
+  {"region": "rule-3", "text": "...", "size_mm": 5} lays text into a ruled line or blank box
+  (ids in DIR/regions.png); uses your handwriting from data/handwriting when available.
   x, y: left end of the text baseline in worksheet mm. Origin = top-left corner of the
   worksheet as you read it, y grows downward. size_mm = cap height (default 5).
 
 Writes DIR/rectified.png (top-down virtual page, 4 px/mm), DIR/preview.png and
-DIR/cmds.txt (J moves for jog.py). Machine frame: +X = user's left, +Y = away from user.
+DIR/cmds.txt (J moves for davinci_jog.py). Machine frame: +X = user's left, +Y = away from user.
 With the worksheet top edge pointing away from you, page x -> machine -X and page y -> machine -Y.
 """
 import argparse
@@ -22,11 +24,14 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibrate_from_photo import order_quad  # reuse the corner ordering
+import hand_layout as hl  # blank areas, text into regions
+
+HAND_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "handwriting")
 
 PAGE_W, PAGE_H = 215.9, 279.4  # US Letter, mm
 LIMIT = 88.0                   # usable travel: +-LIMIT mm from the head start, each axis
 PX = 4                         # rectified pixels per mm
-LIFT = 2.0                     # pen-down = Z-2 from travel height (same as lily_run.py)
+LIFT = 2.0                     # pen-down = Z-2 from travel height (same as davinci_draw.py)
 TRAVEL_Z = -3.0                # travel height, measured from the bottom stop (z=0)
 
 # Single-stroke font. Glyph box is 3 wide x 5 high units; advance 4 units. Each glyph is a
@@ -142,7 +147,7 @@ def to_machine(p, start):
 
 
 def jog_commands(strokes):
-    """Machine-mm polylines in drawing order -> jog.py J lines (pen up at travel height between strokes)."""
+    """Machine-mm polylines in drawing order -> davinci_jog.py J lines (pen up at travel height between strokes)."""
     cmds = [f"J Z{TRAVEL_Z:.3f} F100"]
     pos = [0.0, 0.0]
 
@@ -164,14 +169,37 @@ def jog_commands(strokes):
     return cmds
 
 
-def plan(photo, elements, dark=110, start_mm=None):
-    """Return the rectified page, the head start, J commands and what fits this placement."""
+def plan(photo, elements, dark=110, start_mm=None, hand_root=HAND_ROOT):
+    """Return the rectified page, the head start, J commands and what fits this placement.
+
+    An element with "region": "rule-3" (an id from regions.png) is laid into that rule or blank box
+    with the user's handwriting (data/handwriting) when it has been harvested; size_mm is then the letter height.
+    """
     rect = rectify(photo)
     start = tuple(start_mm) if start_mm else find_start(cv2.cvtColor(rect, cv2.COLOR_BGR2GRAY), dark)
     sx, sy = start
+    regions = hl.detect_regions(rect)
+    by_id = {r["id"]: r for r in regions}
+    glyphs = hl.load_glyphs(hand_root) if any("region" in el for el in elements) else []
+    style = hl.learn_style(glyphs)
     ok_page, bad_page, skipped = [], [], []
     for i, el in enumerate(elements):
-        strokes = text_strokes(str(el["text"]), float(el["x"]), float(el["y"]), float(el.get("size_mm", 5.0)))
+        if "region" in el:
+            reg = by_id.get(el["region"])
+            if reg is None:
+                skipped.append((i, f"no region {el['region']!r}: see regions.png"))
+                continue
+            try:
+                res = hl.layout_text(str(el["text"]), reg, float(el.get("size_mm", 5.0)), glyphs, style, seed=i)
+            except ValueError as e:
+                skipped.append((i, str(e)))
+                continue
+            if res["overflow"]:
+                skipped.append((i, f"does not fit {el['region']} even at {res['size_mm']} mm"))
+                continue
+            strokes = res["paths"]
+        else:
+            strokes = text_strokes(str(el["text"]), float(el["x"]), float(el["y"]), float(el.get("size_mm", 5.0)))
         pts = [p for s in strokes for p in s]
         if not pts:
             skipped.append((i, "empty text"))
@@ -194,7 +222,7 @@ def plan(photo, elements, dark=110, start_mm=None):
         s = pool.pop(k)
         ordered.append(s)
         pos = s[-1]
-    return {"rect": rect, "start": start, "cmds": jog_commands(ordered),
+    return {"rect": rect, "start": start, "cmds": jog_commands(ordered), "regions": regions,
             "ok": ok_page, "bad": bad_page, "skipped": skipped, "strokes": len(ordered)}
 
 
@@ -237,6 +265,9 @@ def main(argv=None):
     out = os.path.abspath(a.out_dir)
     cv2.imwrite(os.path.join(out, "rectified.png"), res["rect"])
     cv2.imwrite(os.path.join(out, "preview.png"), draw_preview(res))
+    cv2.imwrite(os.path.join(out, "regions.png"), hl.draw_regions(res["rect"], res["regions"]))
+    with open(os.path.join(out, "regions.json"), "w", encoding="utf-8") as f:
+        json.dump(res["regions"], f, indent=1)
     cmds_path = os.path.join(out, "cmds.txt")
     with open(cmds_path, "w", encoding="utf-8") as f:
         f.write("\n".join(res["cmds"]) + "\n")
@@ -247,7 +278,7 @@ def main(argv=None):
     for i, why in res["skipped"]:
         print(f"  skipped element {i} ({why}): {elements[i].get('text', '')!r}")
     print(f"preview: {os.path.join(out, 'preview.png')}")
-    print(f"run: python tools/jog.py @{cmds_path}")
+    print(f"run: python tools/davinci_jog.py @{cmds_path}")
     return 0
 
 

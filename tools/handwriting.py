@@ -6,7 +6,7 @@ Storage (data/handwriting/, gitignored):
   samples/<id>_page.png   deskewed page the glyph boxes refer to
   index.json              sample list
   glyphs.json             lines and glyph candidates (strokes in units of the line's letter height)
-  last_render.svg         last render, for tools/lily_run.py
+  last_render.svg         last render, for tools/davinci_draw.py
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from worksheet import GLYPHS  # noqa: E402  built-in single-stroke font: 3x5 units, y up
+import hand_layout as hl  # noqa: E402  style, region layout, blank areas
 
 CLAUDE_MODEL = "claude-sonnet-5-5"
 MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
@@ -304,7 +305,7 @@ def render_text(text, size_mm=8.0, glyphs=(), seed=None):
 
 
 def to_svg(paths, margin=5.0):
-    """SVG in mm, same <path d="M x,y L ..."> shape that tools/lily_run.py parses."""
+    """SVG in mm, same <path d="M x,y L ..."> shape that tools/davinci_draw.py parses."""
     pts = [p for pl in paths for p in pl]
     if pts:
         minx = min(x for x, _ in pts)
@@ -404,6 +405,7 @@ class Handwriting:
             store["glyphs"] += glyphs
             self._write("glyphs.json", store)
             self._write("index.json", index)
+            hl.refresh_style(self.root)
         return {"id": sid, "lines": len(lines), "glyphs": len(glyphs)}
 
     def detail(self, sid):
@@ -458,6 +460,29 @@ class Handwriting:
         raw = (self.samples_dir / entry["file"]).read_bytes()
         text, backend = read_text(raw, MIME[Path(entry["file"]).suffix.lower()])
         return {"backend": backend, "text": text}
+
+    def layout(self, payload):
+        """Text into a box or ruled line (page mm). See tools/hand_layout.py."""
+        payload = payload or {}
+        text, region, size = payload.get("text"), payload.get("region"), payload.get("size_mm", 8)
+        seed = payload.get("seed", 0)
+        if not isinstance(text, str) or not text.strip() or len(text) > 500:
+            raise ValueError("Send 'text' (1 to 500 characters)")
+        if not isinstance(region, dict):
+            raise ValueError("Send 'region': {x, y, w, h} for a box, or {x0, y0, x1, y1} for a ruled line (page mm)")
+        if isinstance(size, bool) or not isinstance(size, (int, float)) or not 2 <= size <= 40:
+            raise ValueError("size_mm must be between 2 and 40")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("seed must be an integer")
+        with self.lock:
+            style = hl.refresh_style(self.root)
+            glyphs = self._glyphs()["glyphs"]
+        res = hl.layout_text(text, region, float(size), glyphs, style, seed=seed)
+        svg = hl.to_svg(res["paths"])
+        out = self.root / "last_layout.svg"
+        out.write_text(svg, encoding="utf-8")
+        return {"svg": svg, "file": str(out), "size_mm": res["size_mm"], "requested_mm": res["requested_mm"],
+                "overflow": res["overflow"], "rows": res["row_count"]}
 
     def render(self, payload):
         payload = payload or {}

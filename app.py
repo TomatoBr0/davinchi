@@ -696,7 +696,7 @@ def make_handler(store, link=None, hand=None):
                     if action == "upload":  # phone photos run to several MB
                         return self._json(hand.upload(self._body(MAX_UPLOAD)), 201)
                     handlers = {"transcribe": hand.transcribe, "label": hand.label,
-                                "read": hand.read, "render": hand.render}
+                                "read": hand.read, "render": hand.render, "layout": hand.layout}
                     if action not in handlers:
                         return self._json({"error": "Not found"}, 404)
                     return self._json(handlers[action](self._body()))
