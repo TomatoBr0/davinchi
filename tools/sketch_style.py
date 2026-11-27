@@ -1,6 +1,6 @@
 """Hand-sketch style: image -> SVG of loose edge lines + form-following hatching.
 
-Each <path> carries data-p (0..1 pencil pressure) which tools/lily_run.py turns into bed height.
+Each <path> carries data-p (0..1 pencil pressure) which tools/davinci_draw.py turns into bed height.
   python tools/sketch_style.py in.jpg out.svg [size=150] [loose=0.35] [passes=2] [hatch=1.0] [thr=0.45] [seed=1] [tune=1]
 
 Tone: each hatch cell is budgeted with the ink it will actually lay down (edges already there are
