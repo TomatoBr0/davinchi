@@ -9,9 +9,10 @@
  * measured and entered while disarmed. $ settings are RAM-only and reset at
  * boot. Steps/mm (M92) and taught max X/Y (M211) are saved in EEPROM. The
  * origin is never saved: after each boot, jog to the origin and send M210.
- * Calibrate by jogging (no endstops), see docs/hardware.md. Status LEDs:
- * A0 ready, A1 busy, A2 alarm, D13 heartbeat. No homing switches or servo
- * are assumed. Z is the bed axis.
+ * Calibrate by jogging, see docs/hardware.md. Optional photo-interrupter
+ * endstops on D9 (X), D10 (Y), D11 (Z), off by default ($ESEN). Status LEDs:
+ * A0 ready, A1 busy, A2 alarm, D13 heartbeat. No servo is assumed.
+ * Z is the bed axis.
  */
 #include <Arduino.h>
 #include <stdlib.h>
@@ -86,6 +87,28 @@ void loadCal() {
   if(r.maxY>0&&r.maxY<=600) ax[1].maxMm=r.maxY;
   calibrated = r.calibrated==1 && ax[0].maxMm>0 && ax[1].maxMm>0;
 }
+// Optional endstops. Bit i of each mask is for axis i (0=X, 1=Y, 2=Z).
+// ESDIR bit set = endstop lies in the + direction. Default 4: Z bottom is +Z.
+static const uint8_t ES_PIN[3]={9,10,11};
+const int ES_EE_ADDR=32; // after CalRecord (23 bytes)
+struct EsRecord { uint8_t magic, en, inv, dir; };
+const uint8_t ES_MAGIC=0xDE;
+uint8_t esEnable=0, esInv=0, esDir=4;
+void saveEs() { EsRecord r={ES_MAGIC,esEnable,esInv,esDir}; EEPROM.put(ES_EE_ADDR,r); }
+void loadEs() {
+  EsRecord r; EEPROM.get(ES_EE_ADDR,r);
+  if(r.magic!=ES_MAGIC||(r.en|r.inv|r.dir)>7) return;
+  esEnable=r.en; esInv=r.inv; esDir=r.dir;
+}
+// True when the beam is blocked. Blocked reads HIGH with the default ESINV=0.
+bool endstopHit(uint8_t i) { return (digitalRead(ES_PIN[i])==HIGH) != (((esInv>>i)&1)!=0); }
+uint8_t esState() { uint8_t s=0; for(uint8_t i=0;i<3;i++) if(endstopHit(i)) s|=1<<i; return s; }
+void printEs(uint8_t s) {
+  Serial.print(F("ES"));
+  for(uint8_t i=0;i<3;i++) { Serial.print(i==0?F(" X:"):i==1?F(" Y:"):F(" Z:")); Serial.print(((s>>i)&1)?F("blocked"):F("open")); }
+  Serial.println();
+}
+
 // Each LED is written only when its state changes, so this is cheap in the step loop.
 void writeLed(uint8_t idx, uint8_t pin, bool on) {
   static uint8_t out[4]={2,2,2,2};
@@ -120,6 +143,9 @@ bool setParameter(const char *word) {
   else if(!strcmp(key,"$XPOS")) {ax[0].posMm=v; positionSet[0]=true;}
   else if(!strcmp(key,"$YPOS")) {ax[1].posMm=v; positionSet[1]=true;}
   else if(!strcmp(key,"$ZPOS")) {ax[2].posMm=v; positionSet[2]=true;}
+  else if(!strcmp(key,"$ESEN")) {if(v<0||v>7||v!=(float)(int)v)return false; esEnable=(uint8_t)v; saveEs();}
+  else if(!strcmp(key,"$ESINV")) {if(v<0||v>7||v!=(float)(int)v)return false; esInv=(uint8_t)v; saveEs();}
+  else if(!strcmp(key,"$ESDIR")) {if(v<0||v>7||v!=(float)(int)v)return false; esDir=(uint8_t)v; saveEs();}
   else if(!strcmp(key,"$PENUP")) {if(v<0||v>600)return false; penUpZ=v; penUpSet=true;}
   else if(!strcmp(key,"$PENDOWN")) {if(v<0||v>600)return false; penDownZ=v; penDownSet=true;}
   else return false;
@@ -187,6 +213,45 @@ bool moveTo(float target[3], float feed, bool checkLimits) {
   Serial.println(F("ok")); return true;
 }
 
+// Homing speeds and limits. Lower HOME_SLOW if the endstop is hit too hard.
+#define HOME_SEEK_MM_MIN 120.0f
+#define HOME_SLOW_MM_MIN 30.0f
+#define HOME_BACKOFF_MM 2.0f
+#define HOME_MAX_MM 400.0f   // give up if no trigger within this travel
+
+// Steps axis i, n steps at most, in direction pos. stopOn 1 stops when blocked,
+// 0 when open, -1 ignores the endstop. Returns steps taken, or -1 if interrupted.
+long stepAxis(uint8_t i, bool pos, float feedMm, long n, int8_t stopOn) {
+  digitalWrite(ax[i].dirPin,pos?HIGH:LOW); delayMicroseconds(5);
+  unsigned long periodUs=(unsigned long)(60000000.0f/(feedMm*ax[i].stepsPerMm));
+  if(periodUs<1000UL) periodUs=1000UL; // same 1 kstep/s cap as moves
+  unsigned long tNext=micros();
+  long s=0;
+  for(; s<n; s++) {
+    if(stopOn>=0 && endstopHit(i)==(stopOn==1)) break;
+    if(interrupted()) return -1;
+    tNext+=periodUs;
+    while((long)(micros()-tNext)<0) updateLeds();
+    digitalWrite(ax[i].stepPin,HIGH); delayMicroseconds(3); digitalWrite(ax[i].stepPin,LOW);
+    ax[i].posMm+=(pos?1.0f:-1.0f)/ax[i].stepsPerMm;
+  }
+  return s;
+}
+// Seek to the endstop, back off, re-approach slowly, then zero the axis there.
+bool homeAxis(uint8_t i) {
+  bool pos=(esDir>>i)&1;
+  long seek=stepAxis(i,pos,HOME_SEEK_MM_MIN,lround(HOME_MAX_MM*ax[i].stepsPerMm),1);
+  if(seek<0) return false;
+  if(!endstopHit(i)) { replyError(F("home: no endstop trigger")); return false; }
+  long back=lround(HOME_BACKOFF_MM*ax[i].stepsPerMm);
+  if(stepAxis(i,!pos,HOME_SLOW_MM_MIN,back,-1)<0) return false;
+  long app=stepAxis(i,pos,HOME_SLOW_MM_MIN,2*back,1);
+  if(app<0) return false;
+  if(!endstopHit(i)) { replyError(F("home: re-approach missed endstop")); return false; }
+  ax[i].posMm=0; positionSet[i]=true;
+  return true;
+}
+
 void processLine(char *line) {
   errorLatched=false; // the red LED shows the most recent line's error
   for(char *p=line;*p;p++) if(*p>='a'&&*p<='z') *p-=32;
@@ -202,6 +267,30 @@ void processLine(char *line) {
   if(w[0]=='$') {
     if(armed) { replyError(F("disarm before configuration")); return; }
     if(!setParameter(w)) { replyError(F("bad configuration")); return; }
+    Serial.println(F("ok")); return;
+  }
+  if(!strcmp(w,"ES")) { printEs(esState()); Serial.println(F("ok")); return; }
+  if(!strcmp(w,"ESWATCH")) {
+    uint8_t last=0xFF;
+    while(!Serial.available()) {
+      uint8_t s=esState();
+      if(s!=last) { printEs(s); last=s; }
+      updateLeds(); delay(5);
+    }
+    while(Serial.available()) Serial.read();
+    Serial.println(F("ok")); return;
+  }
+  if(!strcmp(w,"G28")) {
+    bool want[3]={false,false,false}; bool any=false;
+    while((w=strtok_r(NULL," \t",&save))) {
+      uint8_t i=(w[0]=='X')?0:(w[0]=='Y')?1:(w[0]=='Z')?2:3;
+      if(i==3||w[1]) { replyError(F("G28 takes X, Y or Z")); return; }
+      want[i]=true; any=true;
+    }
+    if(!any) want[0]=want[1]=want[2]=true;
+    if(!armed) { replyError(F("not armed")); return; }
+    for(uint8_t i=0;i<3;i++) if(want[i] && !((esEnable>>i)&1)) { replyError(F("endstop disabled; set $ESEN")); return; }
+    for(uint8_t i=0;i<3;i++) if(want[i] && !homeAxis(i)) return;
     Serial.println(F("ok")); return;
   }
   if(!strcmp(w,"G21")) { Serial.println(F("ok")); return; }
@@ -323,7 +412,8 @@ void processLine(char *line) {
 void setup() {
   pinsFloat(); Serial.begin(115200);
   pinMode(LED_READY,OUTPUT); pinMode(LED_BUSY,OUTPUT); pinMode(LED_ALARM,OUTPUT); pinMode(LED_HEART,OUTPUT);
-  loadCal();
+  for(uint8_t i=0;i<3;i++) pinMode(ES_PIN[i],INPUT_PULLUP);
+  loadCal(); loadEs();
   Serial.println(F("DaVinci plotter ready; unarmed; G21 G90; send measured config, then ARM, M5"));
 }
 void loop() {

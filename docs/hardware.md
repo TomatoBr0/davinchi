@@ -144,10 +144,16 @@ Grbl parameters to validate include \`$100-102\` steps/mm, \`$110-112\` maximum 
 
 ## Plotter commands for calibrating by jogging
 
-The endstops are not used. Position is taught by jogging.
+Position is taught by jogging. Optional endstops (below) can replace the jog-to-origin step for X, Y and Z.
 
 | Command | Effect |
 |---|---|
+| `ES` | Live endstop state, e.g. `ES X:open Y:blocked Z:open`. |
+| `ESWATCH` | Streams `ES` lines whenever a state changes. Send any byte to stop. |
+| `G28 [X] [Y] [Z]` | Home the named axes (all three if none given). Needs `M17` and the axis enabled with `$ESEN`. Sets that axis to 0. |
+| `$ESEN=n` | Bitmask of enabled endstops, default `0` (off). Bit 0 X, bit 1 Y, bit 2 Z. Saved to EEPROM. Disarmed only. |
+| `$ESINV=n` | Bitmask that flips polarity per axis. Default `0`: blocked reads HIGH. Saved to EEPROM. |
+| `$ESDIR=n` | Bitmask, bit set = endstop lies in the + direction. Default `4`: X and Y toward -, Z toward +Z (bed bottom). Saved to EEPROM. |
 | `M17` / `M18` | Enable / disable motors. `M18` lets you push the carriage by hand and marks the position unknown (red blinks). |
 | `J X.. Y.. Z.. [F..]` | Relative jog. Ignores travel limits. Needs `M17`. |
 | `M210` | Set the current position as origin (same as `G92 X0 Y0 Z0`). |
@@ -157,7 +163,7 @@ The endstops are not used. Position is taught by jogging.
 | `M114` | Report position. |
 | `M115` | Report calibrated flag, origin flag, armed state, max travel and steps/mm. |
 
-Steps/mm (`M92`) and the taught max X/Y (`M211`) survive power-off. The origin never does: the carriage position is unknown after every boot, so send `M210` each time. The `$` settings (`$ZMAX`, `$PENUP`, `$PENDOWN`, and so on) are still RAM-only and must be re-sent after each boot.
+Steps/mm (`M92`) and the taught max X/Y (`M211`) survive power-off. The origin never does: the carriage position is unknown after every boot, so send `M210` each time. The `$` settings (`$ZMAX`, `$PENUP`, `$PENDOWN`, and so on) are still RAM-only and must be re-sent after each boot. The endstop settings `$ESEN`, `$ESINV` and `$ESDIR` are the exception: they are saved to EEPROM.
 
 ### Calibrate by jogging
 
@@ -168,7 +174,31 @@ Steps/mm (`M92`) and the taught max X/Y (`M211`) survive power-off. The origin n
 5. Jog to the far max corner, for example `J X200 Y150`, staying within the physical travel.
 6. Send `M211`. Max X/Y are saved. The green LED goes solid.
 
-After this, `G0`/`G1` moves outside `[0, max]` are rejected with `error: travel limit` and the red LED turns solid. If the carriage is moved by hand, send `M18`, then `M17`, `M210`, and re-teach as needed.
+### Optional optical endstops (D9 X, D10 Y, D11 Z)
+
+Off by default (`$ESEN=0`), so behaviour is unchanged until you enable them. Each sensor is a slotted photo-interrupter with pins A (LED anode), G (ground) and C (collector output). A blocked beam reads HIGH with the default polarity.
+
+- All sensor **A** pins together to **3.3 V** through a **150–220 Ω** resistor if the LED has no resistor of its own.
+- All sensor **G** pins to **GND**.
+- Each **C** output to its pin: X to **D9**, Y to **D10**, Z to **D11**. The firmware sets `INPUT_PULLUP`, so no external pull-up is needed.
+
+Do not use A0–A2 or D2–D8 for these; they are already used by the LEDs and CNC shield.
+
+**Test procedure** (motors disconnected for steps 1–4):
+1. Unplugged: check continuity from each C pin to its sensor, and that A and G are not shorted to each other.
+2. Power the Uno over USB. Send `ES`. With the beams open, expect `open` on all three. Block one sensor by hand and send `ES` again. Only that axis should change to `blocked`. If it reads inverted, set `$ESINV` for that axis (for example `$ESINV=1` for X), then recheck.
+3. Send `ESWATCH`, block and unblock each sensor, and watch the lines change. Send any byte to stop, then expect `ok`.
+4. Check that the sensor for each axis is on the side you expect (see `$ESDIR`). Then send `$ESEN=<bits>` for the axes you want, for example `$ESEN=1` for X only. Settings are disarmed-only.
+5. Reconnect the motors. Send `M17`, then jog the carriage away from the endstop with `J`, for example `J X20 F300` if the X endstop is on the -X side, so the beam is open with free travel.
+6. Send `G28 X`. The carriage should move slowly toward the endstop, stop at the trigger, back off 2 mm, re-approach slowly, and return `ok`.
+7. Send `M114`. X should read `X0.000 ... known`. Repeat for Y and Z, checking `$ESDIR` for each.
+8. If the carriage moves away from the sensor, set the matching `$ESDIR` bit. If `G28` reports `home: no endstop trigger`, the sensor was not blocked within 400 mm. Check wiring and polarity with `ES`.
+
+Homing speeds and the 400 mm search cap are constants at the top of the homing code in `firmware/plotter/plotter.ino` (`HOME_SEEK_MM_MIN`, `HOME_SLOW_MM_MIN`, `HOME_MAX_MM`). Start with the defaults and keep the carriage clear of hard stops during the first homing.
+
+### Travel limits
+
+After calibration, `G0`/`G1` moves outside `[0, max]` are rejected with `error: travel limit` and the red LED turns solid. If the carriage is moved by hand, send `M18`, then `M17`, `M210`, and re-teach as needed.
 
 ## Height variation: a reality check
 
