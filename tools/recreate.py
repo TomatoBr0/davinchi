@@ -16,19 +16,21 @@ GAIN, rng = float(args.get('gain', 1.0)), random.Random(int(args.get('seed', 1))
 
 g = cv2.imread(sys.argv[1], cv2.IMREAD_GRAYSCALE).astype(np.float32)
 if 'blank' in args:  # blank=x0,y0,x1,y1;... areas to leave empty (fractions of the image)
-    h0, w0 = g.shape; bg = float(np.percentile(g, 90))
+    h0, w0 = g.shape; keepmask = np.ones_like(g)
     for r in args['blank'].split(';'):
-        x0, y0, x1, y1 = map(float, r.split(',')); g[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)] = bg
+        x0, y0, x1, y1 = map(float, r.split(',')); keepmask[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)] = 0
+else:
+    keepmask = np.ones_like(g)
 if 'crop' in args:  # crop=x0,y0,x1,y1 as fractions of the image
     x0, y0, x1, y1 = map(float, args['crop'].split(',')); h0, w0 = g.shape
-    g = g[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)]
+    g = g[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)]; keepmask = keepmask[int(y0 * h0):int(y1 * h0), int(x0 * w0):int(x1 * w0)]
 PENCIL = args.get('mode', 'pen') == 'pencil'  # pencil: light areas get many faint strokes you can smudge
 ink_of = (lambda p: .2 + .8 * p) if PENCIL else (lambda p: .55 + .45 * p)   # how dark one stroke is at pressure p
-sc = 900 / max(g.shape); g = cv2.resize(g, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+sc = 900 / max(g.shape); g = cv2.resize(g, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA); keepmask = cv2.resize(keepmask, (g.shape[1], g.shape[0]), interpolation=cv2.INTER_NEAREST)
 H, W = g.shape; S = SIZE / max(H, W); pw = PEN / S            # mm/px, pencil width in px
 paper = cv2.GaussianBlur(cv2.dilate(g, np.ones((121, 121), np.uint8)), (0, 0), 40)  # local paper brightness (handles shading)
 ink = np.percentile(g, 2)
-D = np.clip((paper - g) / np.maximum(1, paper - ink) - .06, 0, 1) / .94           # 0 paper .. 1 solid ink
+D = np.clip((paper - g) / np.maximum(1, paper - ink) - .06, 0, 1) / .94 * keepmask  # 0 paper .. 1 solid ink
 if args.get('subject') == '1':  # keep only the main subject (largest dark shape), drop text and marks around it
     blob = (cv2.GaussianBlur(D, (0, 0), 6) > .15).astype(np.uint8)
     blob = cv2.morphologyEx(blob, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)))
@@ -76,7 +78,7 @@ def trace(x0, y0, sgn, maxlen, r0):
 
 strokes = []
 # 1) ink shapes thinner than a pencil sweep (eyelashes, outlines): fill them exactly with nested outlines
-M = (D > .55).astype(np.uint8)
+M = (D > float(args.get('solid', .55))).astype(np.uint8)
 k = max(3, int(round(3 * pw)) | 1)
 thin = M & (1 - cv2.morphologyEx(M, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))))
 thin = cv2.dilate(thin, np.ones((3, 3), np.uint8)) & M
