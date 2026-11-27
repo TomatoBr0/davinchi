@@ -9,6 +9,7 @@ drawn), which raises the writing height permanently, as before.
 The SVG is looked up in the cwd, then next to this script. davinci_cmds.txt is written to the cwd.
 """
 import math, os, re, subprocess, sys
+BOX = float(next((a[4:] for a in sys.argv if a.startswith('box=')), 175))  # usable square, mm
 FEED = int(next((a[5:] for a in sys.argv if a.startswith('feed=')), 600))  # mm/min, firmware max 1500
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -78,7 +79,10 @@ def build(svg_text, fit=150.0, ang=0.0, press=0.0, anchor='center', pen_down=Fal
     # anchor: where the head starts. center, or a corner of the drawing (f/b = front/back, l/r = user's left/right)
     pts = [m0(p) for q, _ in chains for p in q]
     ox = oy = 0.0
-    if anchor != 'center':
+    if anchor.startswith('sq'):  # head starts at a corner of the BOX mm work square; drawing is centred in it
+        ox = BOX / 2 if 'r' in anchor else -BOX / 2    # head at the right corner -> square lies to the left (+X)
+        oy = -BOX / 2 if 'b' in anchor else BOX / 2    # head at the back corner -> square lies toward the front (-Y)
+    elif anchor != 'center':
         ox = -max(a for a, b in pts) if 'l' in anchor else -min(a for a, b in pts)   # +X is the user's left
         oy = -min(b for a, b in pts) if 'f' in anchor else -max(b for a, b in pts)   # +Y is back
     m = lambda p: (lambda x, y: (x + ox, y + oy))(*m0(p))

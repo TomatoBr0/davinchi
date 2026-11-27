@@ -31,6 +31,12 @@ H, W = g.shape; S = SIZE / max(H, W); pw = PEN / S            # mm/px, pencil wi
 paper = cv2.GaussianBlur(cv2.dilate(g, np.ones((121, 121), np.uint8)), (0, 0), 40)  # local paper brightness (handles shading)
 ink = np.percentile(g, 2)
 D = np.clip((paper - g) / np.maximum(1, paper - ink) - .06, 0, 1) / .94 * keepmask  # 0 paper .. 1 solid ink
+# filter: drop small isolated specks and stray marks away from the drawing (keeps every sizeable part)
+blob = (cv2.GaussianBlur(D, (0, 0), 4) > .1).astype(np.uint8)
+blob = cv2.morphologyEx(blob, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+n, lab, st, _ = cv2.connectedComponentsWithStats(blob, 8)
+big = [i for i in range(1, n) if st[i, cv2.CC_STAT_AREA] >= H * W * float(args.get('minpart', .002))]
+D = D * cv2.dilate(np.isin(lab, big).astype(np.uint8), np.ones((9, 9), np.uint8))
 if args.get('subject') == '1':  # keep only the main subject (largest dark shape), drop text and marks around it
     blob = (cv2.GaussianBlur(D, (0, 0), 6) > .15).astype(np.uint8)
     blob = cv2.morphologyEx(blob, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)))
